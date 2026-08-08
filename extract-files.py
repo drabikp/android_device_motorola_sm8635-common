@@ -226,11 +226,10 @@ blob_fixups: blob_fixups_user_type = {
     # Display composer: links graphics.composer3-V2 while the graph resolves to
     # V4. Platform ships V1-V4. This one matters -- without the composer there is
     # no display.
-    'vendor/bin/hw/vendor.qti.hardware.display.composer-service': blob_fixup()
-        .replace_needed(
-            'android.hardware.graphics.composer3-V2-ndk.so',
-            'android.hardware.graphics.composer3-V3-ndk.so'
-    ),
+    # The composer3 V2->V3 rewrite is REMOVED: proprietary-files.txt now ships
+    # android.hardware.graphics.composer3-V2-ndk.so, which is what the stock
+    # composer was built against. Same reasoning as the keymint V2/V3 libs --
+    # ship the version the blob wants instead of relinking it to another ABI.
 }  # fmt: skip
 
 module = ExtractUtilsModule(

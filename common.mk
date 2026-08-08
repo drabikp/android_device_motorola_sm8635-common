@@ -12,26 +12,13 @@ PRODUCT_SOONG_NAMESPACES += $(COMMON_PATH)
 #                                                 AIDL interfaces
 PRODUCT_SOONG_NAMESPACES += hardware/qcom-caf/bootctrl
 PRODUCT_SOONG_NAMESPACES += vendor/qcom/opensource/commonsys-intf/display
-PRODUCT_SOONG_NAMESPACES += hardware/qcom-caf/sm8650
 
-# Display composer + allocator. WITHOUT THESE THERE IS NO DISPLAY AT ALL:
-# nothing declares android.hardware.graphics.composer3.IComposer/default (nor
-# the HIDL 2.1 fallback), so SurfaceFlinger aborts in HidlComposer's constructor
-# with "failed to get hwcomposer service" and restarts every 5 seconds forever.
-#
-# How they went missing: an earlier pass removed the blobs on the grounds that
-# they are "built from source by hardware/qcom-caf/sm8650/display" -- and put
-# them in add-missing-hals.sh's EXCLUDE list to keep them out -- but never added
-# the packages that would actually build them. So the exclusion held and nothing
-# replaced them. The source modules do exist (display/composer/Android.bp and
-# display/gralloc/Android.bp); they were simply never requested.
-# The gralloc module also provides the QTI mapper impl and its vintf fragment,
-# so the matching blobs are removed from proprietary-files.txt (they collided:
-# "overriding commands for target ...mapper-impl-qti-display.xml").
-PRODUCT_PACKAGES += \
-    vendor.qti.hardware.display.composer-service \
-    vendor.qti.hardware.display.allocator-service \
-    android.hardware.graphics.mapper@4.0-impl-qti-display
+# NOTE: the display composer/allocator/mapper are shipped as STOCK BLOBS, not
+# built from source. Building them here was tried and reverted -- every SDM
+# support library in the image is a bit-identical stock blob, and sdm::
+# interfaces are private unversioned C++ vtables, so a source-built composer
+# SIGSEGV'd inside the stock libsdmcore.so and restart-looped SF and zygote with
+# it. See the DISPLAY STACK section in proprietary-files.txt.
 
 # API level. Vendor is frozen at 34; see BoardConfigCommon.mk.
 PRODUCT_SHIPPING_API_LEVEL := 34
@@ -165,7 +152,16 @@ PRODUCT_PACKAGES += \
 PRODUCT_PACKAGES += \
     vendor.qti.hardware.display.config-V2-ndk.vendor \
     vendor.qti.hardware.display.config-V5-ndk.vendor \
-    vendor.qti.hardware.display.config-V7-ndk.vendor
+    vendor.qti.hardware.display.config-V7-ndk.vendor \
+    vendor.qti.hardware.display.config-V11-ndk.vendor
+
+# composer3: the stock composer binary links android.hardware.graphics.composer3-V2
+# and vendor.qti.hardware.display.composer3-V1 while the platform settles on V3/V4.
+# Both are aidl_interface-generated, so they are built here rather than shipped as
+# prebuilts (a prebuilt of the same name fails with "partition is different").
+PRODUCT_PACKAGES += \
+    android.hardware.graphics.composer3-V2-ndk.vendor \
+    vendor.qti.hardware.display.composer3-V1-ndk.vendor
 
 PRODUCT_PACKAGES += \
     vendor.qti.hardware.display.color-V1-ndk.vendor \
