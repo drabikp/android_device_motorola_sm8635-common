@@ -32,6 +32,57 @@ lib_fixups: lib_fixups_user_type = {
 }
 
 blob_fixups: blob_fixups_user_type = {
+    # --- tinyxml2 ABI break: THIS ONE STOPPED THE BOOT ------------------------
+    # LineageOS ships tinyxml2 11.0.0, where sizeof(XMLDocument) is 880. Every
+    # Motorola vendor blob was compiled against 10.x, where it is 776, and
+    # several stack-allocate an XMLDocument.
+    #
+    # Verified by disassembling the shipping blob:
+    # snapdragoncolor::StcOrderParserImpl::ParseFile reserves the object at
+    # sp+0x68 and memsets exactly 0x308 = 776 bytes, with its own callee-saved
+    # x19..x28 immediately above it. The 11.0.0 constructor writes 880 -- 104
+    # bytes past the reservation, landing precisely on those saved registers. So
+    # ParseFile logs "Load XML file ... successful", returns with `this` (x20)
+    # zeroed, and the caller null-derefs at StcOrderParserImpl::Init()+132. The
+    # tombstone matches exactly: x20-x25 zeroed, x26 = 0xa.
+    #
+    # That is six frames under sdm::CoreImpl::CreateDisplay, so it kills the
+    # display composer -- and the composer's .rc restarts surfaceflinger, whose
+    # .rc restarts zygote. The entire framework went down every 5s, 52 times.
+    #
+    # The 10.x library is ALREADY in the image: Motorola ships their own private
+    # copy as vendor/lib64/libtinyxml2_1.so (198 exported tinyxml2 symbols, 115 KB)
+    # and 14 of their display libs -- libsdmextension, libsdm-color,
+    # libqdcm-mode-parser ... -- already link it by that name. Only this handful
+    # link the bare "libtinyxml2.so".
+    #
+    # On stock, /vendor/lib64/libtinyxml2.so does not exist as a regular file --
+    # it is a SYMLINK to libtinyxml2_1.so, and extract_utils drops symlinks (the
+    # same trap as media_profiles_vendor.xml). So these blobs resolved to the
+    # 10.x copy on stock, and to the platform's 11.x libtinyxml2.vendor on ours.
+    #
+    # Do NOT "fix" this by shipping stock's system/lib64/libtinyxml2.so: stock is
+    # Android 16 and that copy is ALSO 11.x (230 symbols, same count as ours).
+    # It was tried and would have been a no-op. Repointing DT_NEEDED at
+    # libtinyxml2_1.so is the fix, and needs no new file.
+    (
+        'vendor/bin/qvrdatauploader',
+        'vendor/bin/hw/motorola.hardware.sensorext-service',
+        'vendor/bin/hw/vendor.qti.hardware.display.composer-service',
+        'vendor/lib64/libaodoptfeature.so',
+        'vendor/lib64/libapengine.so',
+        'vendor/lib64/libdpps.so',
+        'vendor/lib64/libeffectsconfig.so',
+        'vendor/lib64/libgamepoweroptfeature.so',
+        'vendor/lib64/liblearningmodule.so',
+        'vendor/lib64/liboffscreenpoweroptfeature.so',
+        'vendor/lib64/libpowercore.so',
+        'vendor/lib64/libpsmoptfeature.so',
+        'vendor/lib64/libsnapdragoncolor-manager.so',
+        'vendor/lib64/libstandbyfeature.so',
+        'vendor/lib64/libvideooptfeature.so',
+    ): blob_fixup()
+        .replace_needed('libtinyxml2.so', 'libtinyxml2_1.so'),
     # --- VINTF versions must match the .replace_needed bumps below ------------
     # Every HAL whose AIDL version we rewrite in its ELF must ALSO have its vintf
     # manifest updated, or the HAL registers as (say) V4 while the framework
