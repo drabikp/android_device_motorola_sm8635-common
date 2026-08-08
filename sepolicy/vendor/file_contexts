@@ -21,3 +21,12 @@
 # The literal /dev/0:0:0:4 entry in QCOM's file_contexts still wins over this
 # regex -- in file_contexts an exact path beats a pattern regardless of order.
 /dev/0:0:0:[0-9]+               u:object_r:vendor_bsg_device:s0
+
+# motorola.hardware.sensorext-service had NO label, so init refused to start it:
+#   Could not start service 'vendor.moto_sensorext' as it is not in a domain --
+#   /vendor/bin/hw/motorola.hardware.sensorext-service (labeled
+#   "u:object_r:vendor_file:s0") has incorrect label or no domain transition
+# Consequence: motorola.hardware.sensors.ISensorExt/default is never registered,
+# and hal_sensors_default then spams { find } on it forever while the sensors
+# multihal never comes up. This is stock's own label, verbatim.
+/(vendor|system/vendor)/bin/hw/motorola\.hardware\.sensorext-service  u:object_r:hal_graphics_composer_default_exec:s0
