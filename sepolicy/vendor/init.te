@@ -1,0 +1,12 @@
+# init has to be able to mount /vendor/fsg with context=u:object_r:fsg_file:s0.
+#
+# QCOM's sm8650/generic/vendor/common/init.te grants exactly these for the
+# firmware mounts it knows about:
+#   allow init { bt_firmware_file vendor_firmware_file firmware_file }:dir mounton;
+#   allow init { bt_firmware_file firmware_file }:filesystem { relabelfrom mount };
+#   allow { bt_firmware_file firmware_file } self:filesystem associate;
+# fsg is Motorola-specific and absent from that list, so it needs the same set
+# here. See sepolicy/vendor/file.te for why the type had to be declared at all.
+allow init fsg_file:dir mounton;
+allow init fsg_file:filesystem { relabelfrom mount };
+allow fsg_file self:filesystem associate;

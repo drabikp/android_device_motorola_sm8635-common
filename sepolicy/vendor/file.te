@@ -1,0 +1,22 @@
+# /vendor/fsg — the modem "file system group" partition.
+#
+# The fstab mounts it with an explicit mount context:
+#   /dev/block/bootdevice/by-name/fsg  /vendor/fsg  ext4
+#       ro,nosuid,nodev,context=u:object_r:fsg_file:s0  wait,slotselect
+#
+# `fsg_file` was defined nowhere -- not in AOSP, not in QCOM's sepolicy_vndr
+# (it is Motorola-specific; QCOM's sm8650 policy has no fsg at all). The kernel
+# rejects a mount whose context= names an unknown type with EINVAL, which is
+# exactly what the boot log shows, twice:
+#
+#   init: [libfs_mgr] __mount(source=/dev/block/bootdevice/by-name/fsg_a,
+#                             target=/vendor/fsg,type=ext4)=-1: Invalid argument
+#
+# while modem -> /vendor/firmware_mnt and bluetooth -> /vendor/bt_firmware, whose
+# context types (firmware_file, bt_firmware_file) *are* defined by QCOM, mount
+# fine. So this is a missing type declaration, not a filesystem problem.
+#
+# contextmount_type is the attribute that makes a type usable in a context=
+# mount; it is what firmware_file and bt_firmware_file carry in
+# sm8650/generic/vendor/common/file.te, and this mirrors them.
+type fsg_file, file_type, contextmount_type, vendor_file_type;
