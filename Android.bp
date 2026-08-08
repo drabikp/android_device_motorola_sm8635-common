@@ -1,0 +1,16 @@
+//
+// SPDX-License-Identifier: Apache-2.0
+//
+// Declares the device/motorola/sm8635-common Soong namespace.
+//
+// Required because the generated vendor blueprints
+// (vendor/motorola/{arcfox,sm8635-common}/Android.bp) import this namespace by
+// path. Without a soong_namespace module here, soong bootstrap fails with:
+//   "namespace device/motorola/sm8635-common does not exist"
+
+soong_namespace {
+    imports: [
+        "hardware/qcom-caf/sm8650",
+        "hardware/qcom-caf/wlan",
+    ],
+}

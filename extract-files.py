@@ -1,0 +1,240 @@
+#!/usr/bin/env -S PYTHONPATH=../../../tools/extract-utils python3
+#
+# SPDX-FileCopyrightText: 2026 The LineageOS Project
+# SPDX-License-Identifier: Apache-2.0
+#
+# Motorola SM8635 (Snapdragon 8s Gen 3, "pineapple") common tree.
+
+from extract_utils.fixups_blob import (
+    blob_fixup,
+    blob_fixups_user_type,
+)
+from extract_utils.fixups_lib import (
+    lib_fixups,
+    lib_fixups_user_type,
+)
+from extract_utils.main import (
+    ExtractUtils,
+    ExtractUtilsModule,
+)
+
+namespace_imports = [
+    'hardware/qcom-caf/sm8650',
+    'hardware/qcom-caf/wlan',
+    'vendor/qcom/opensource/commonsys/display',
+    'vendor/qcom/opensource/commonsys-intf/display',
+    'vendor/qcom/opensource/dataservices',
+    'vendor/qcom/opensource/display',
+]
+
+lib_fixups: lib_fixups_user_type = {
+    **lib_fixups,
+}
+
+blob_fixups: blob_fixups_user_type = {
+    # --- VINTF versions must match the .replace_needed bumps below ------------
+    # Every HAL whose AIDL version we rewrite in its ELF must ALSO have its vintf
+    # manifest updated, or the HAL registers as (say) V4 while the framework
+    # looks up V3 and blocks forever. Observed exactly that: keystore2 never
+    # started because keymint advertised <version>3</version> while the binary
+    # linked keymint-V4-ndk, and vold then waited on keystore2 indefinitely.
+    'vendor/etc/vintf/manifest/android.hardware.security.keymint-service-qti.xml': blob_fixup()
+        .regex_replace('<version>3</version>', '<version>4</version>'),
+    'vendor/etc/vintf/manifest/android.hardware.security.keymint-service.strongbox-thales.xml': blob_fixup()
+        .regex_replace('<version>3</version>', '<version>4</version>'),
+    'vendor/etc/vintf/manifest/android.hardware.health-service.qti.xml': blob_fixup()
+        .regex_replace('<version>2</version>', '<version>4</version>'),
+    'vendor/etc/vintf/manifest/android.hardware.sensors-multihal.xml': blob_fixup()
+        .regex_replace('<version>2</version>', '<version>3</version>'),
+    'vendor/etc/vintf/manifest/android.hardware.wifi.supplicant.xml': blob_fixup()
+        .regex_replace('<version>2</version>', '<version>5</version>'),
+    'vendor/etc/vintf/manifest/bluetooth_audio.xml': blob_fixup()
+        .regex_replace('<version>3</version>', '<version>5</version>'),
+    'vendor/etc/vintf/manifest/face-default_3.xml': blob_fixup()
+        .regex_replace('<version>3</version>', '<version>4</version>'),
+
+    # Motorola's vendor is frozen at vendor API level 34, so these HALs link
+    # OLDER AIDL interface versions than the rest of the dependency graph settles
+    # on, and soong refuses a module that depends on two versions of one
+    # aidl_interface. The platform ships every one of these versions (health
+    # V1-V4, sensors V1-V3, supplicant V1-V4), so nothing is missing -- the blob
+    # just needs repointing at the version everything else uses.
+    #
+    # These MUST live in the common tree's extract-files.py: the blobs are listed
+    # in sm8635-common/proprietary-files.txt, and fixups only apply to the module
+    # that owns the list. Putting them in arcfox/extract-files.py silently does
+    # nothing (verified with readelf on the staged blob).
+    'vendor/bin/hw/android.hardware.sensors-service.multihal': blob_fixup()
+        .replace_needed(
+            'android.hardware.sensors-V2-ndk.so',
+            'android.hardware.sensors-V3-ndk.so'
+    ),
+    'vendor/bin/hw/android.hardware.health-service.qti': blob_fixup()
+        .replace_needed(
+            'android.hardware.health-V2-ndk.so',
+            'android.hardware.health-V4-ndk.so'
+    ),
+    'vendor/bin/hw/wpa_supplicant': blob_fixup()
+        .replace_needed(
+            'android.hardware.wifi.supplicant-V2-ndk.so',
+            'android.hardware.wifi.supplicant-V5-ndk.so'
+        )
+        # Drop the keystore engine libs entirely. They exist so supplicant can use
+        # keystore-backed EAP certificates (enterprise Wi-Fi); they drag
+        # keymint-V1 into the graph against the platform's V4 and no version
+        # rewrite clears it. Normal WPA2/WPA3-PSK does not touch them.
+        # Cost: enterprise EAP-TLS with keystore-held certs will not work.
+        .remove_needed('libkeystore-engine-wifi-hidl.so')
+        .remove_needed('libkeystore-wifi-hidl.so'),
+    # Bluetooth audio HAL: links bluetooth.audio-V3 while the graph resolves to
+    # V5. Platform ships V1-V5.
+    # Fingerprint FPC: links biometrics.common-V3 / fingerprint-V3 while the
+    # graph resolves to V4 (platform ships 1-4 of both). Same treatment as
+    # sensors/health/supplicant -- repoint at V4 instead of parking the HAL.
+    'vendor/bin/hw/android.hardware.biometrics.fingerprint-service.fpc': blob_fixup()
+        .replace_needed(
+            'android.hardware.biometrics.common-V3-ndk.so',
+            'android.hardware.biometrics.common-V4-ndk.so'
+        )
+        .replace_needed(
+            'android.hardware.biometrics.fingerprint-V3-ndk.so',
+            'android.hardware.biometrics.fingerprint-V4-ndk.so'
+    ),
+    # Face unlock: same biometrics V3 -> V4 bump as fingerprint.
+    'vendor/bin/hw/android.hardware.biometrics.face@1.0-service.face': blob_fixup()
+        .replace_needed(
+            'android.hardware.biometrics.common-V3-ndk.so',
+            'android.hardware.biometrics.common-V4-ndk.so'
+        )
+        .replace_needed(
+            'android.hardware.biometrics.face-V3-ndk.so',
+            'android.hardware.biometrics.face-V4-ndk.so'
+    ),
+    # Wi-Fi HAL: links wifi-V1 while the graph resolves to V4. This was parked
+    # earlier; the widened sweep re-added it, and the fixup route works.
+    'vendor/bin/hw/android.hardware.wifi-service': blob_fixup()
+        .replace_needed(
+            'android.hardware.wifi-V1-ndk.so',
+            'android.hardware.wifi-V4-ndk.so'
+    ),
+    # keymint consumers: Motorola's blobs link keymint V2/V3 while the graph
+    # resolves to V4 (platform ships V1-V4). Bump them all rather than dropping
+    # the keystore chain -- without keymint/gatekeeper, vold cannot set up
+    # metadata encryption and /data never mounts.
+    (
+        'vendor/lib64/libqtikeymint.so',
+        'vendor/lib64/libtpa.so',
+        'vendor/lib64/libjc_keymint-thales.so',
+        'vendor/bin/hw/android.hardware.security.keymint-service-qti',
+        'vendor/bin/hw/android.hardware.security.keymint-service.strongbox-thales',
+    ): blob_fixup()
+        .replace_needed(
+            'android.hardware.security.keymint-V3-ndk.so',
+            'android.hardware.security.keymint-V4-ndk.so'
+    ),
+    (
+        'vendor/lib64/libqtiidentitycredential.so',
+        'vendor/bin/hw/android.hardware.identity-service-qti',
+    ): blob_fixup()
+        .replace_needed(
+            'android.hardware.security.keymint-V2-ndk.so',
+            'android.hardware.security.keymint-V4-ndk.so'
+    ),
+    # libkeystore-engine-wifi-hidl is what actually dragged keymint-V1 into
+    # wpa_supplicant's closure (via keystore2-V1), long after the binary's own
+    # NEEDED entries were clean. Transitive deps matter: fix the library, not
+    # just the executable.
+    'vendor/lib64/libkeystore-engine-wifi-hidl.so': blob_fixup()
+        .replace_needed(
+            'android.system.keystore2-V1-ndk.so',
+            'android.system.keystore2-V5-ndk.so'
+    ),
+    'vendor/lib64/hw/audio.bluetooth.default.so': blob_fixup()
+        .replace_needed(
+            'android.hardware.bluetooth.audio-V3-ndk.so',
+            'android.hardware.bluetooth.audio-V5-ndk.so'
+    ),
+    # Every common-tree blob that links graphics.allocator V1 while the graph
+    # resolves to V2. Found by readelf-ing every entry in proprietary-files.txt --
+    # 53 of them, almost all the camera stack. Rescan after any widening
+    # of the blob list; discovering these one failed build at a time is hopeless.
+    (
+        'vendor/bin/aecxsimulator',
+        'vendor/bin/hw/vendor.qti.hardware.display.allocator-service',
+        'vendor/lib64/camera/com.mot.eeprom.mot_gt24p128f_s5kgn8_cli_eeprom.so',
+        'vendor/lib64/camera/com.mot.eeprom.mot_gt24p128f_s5kgn8_eeprom.so',
+        'vendor/lib64/camera/com.mot.eeprom.mot_gt24p128f_s5kjn1_cli_eeprom.so',
+        'vendor/lib64/camera/com.mot.eeprom.mot_gt24p128f_s5kjn1_eeprom.so',
+        'vendor/lib64/camera/com.mot.eeprom.mot_gt24p128f_s5kjn5_cli_eeprom.so',
+        'vendor/lib64/camera/com.mot.eeprom.mot_gt24p128f_s5kjn5_eeprom.so',
+        'vendor/lib64/camera/com.qti.sensor.mot_s5kgn8.so',
+        'vendor/lib64/camera/com.qti.sensor.mot_s5kgn8_cli.so',
+        'vendor/lib64/camera/com.qti.sensor.mot_s5kjn1.so',
+        'vendor/lib64/camera/com.qti.sensor.mot_s5kjn1_cli.so',
+        'vendor/lib64/camera/com.qti.sensor.mot_s5kjn5.so',
+        'vendor/lib64/camera/com.qti.sensor.mot_s5kjn5_cli.so',
+        'vendor/lib64/com.qti.camx.chiiqutils.so',
+        'vendor/lib64/com.qti.feature2.afbrckt.so',
+        'vendor/lib64/com.qti.feature2.anchorsync.so',
+        'vendor/lib64/com.qti.feature2.arcoffline.so',
+        'vendor/lib64/com.qti.feature2.arcrawpro.so',
+        'vendor/lib64/com.qti.feature2.demux.so',
+        'vendor/lib64/com.qti.feature2.fusion.so',
+        'vendor/lib64/com.qti.feature2.generic.so',
+        'vendor/lib64/com.qti.feature2.gs.sm8650.so',
+        'vendor/lib64/com.qti.feature2.hdr.so',
+        'vendor/lib64/com.qti.feature2.mcreprocrt.so',
+        'vendor/lib64/com.qti.feature2.memcpy.so',
+        'vendor/lib64/com.qti.feature2.metadataserializer.so',
+        'vendor/lib64/com.qti.feature2.mfsr.so',
+        'vendor/lib64/com.qti.feature2.mux.so',
+        'vendor/lib64/com.qti.feature2.rawhdr.so',
+        'vendor/lib64/com.qti.feature2.realtimeserializer.so',
+        'vendor/lib64/com.qti.feature2.rt.so',
+        'vendor/lib64/com.qti.feature2.rtmcx.so',
+        'vendor/lib64/com.qti.feature2.serializer.so',
+        'vendor/lib64/com.qti.feature2.swmf.so',
+        'vendor/lib64/com.qti.qseeutils.so',
+        'vendor/lib64/com.qualcomm.mcx.nonlinearmapper.so',
+        'vendor/lib64/hw/camera.qcom.sm8650.so',
+        'vendor/lib64/hw/camera.qcom.so',
+        'vendor/lib64/hw/com.qti.chi.offline.so',
+        'vendor/lib64/hw/com.qti.chi.override.so',
+        'vendor/lib64/libarccamerapostproc_aidl.so',
+        'vendor/lib64/libcamxhwnodecontext.so',
+        'vendor/lib64/libcamximageformatutils.so',
+        'vendor/lib64/libcamxncsdatafactory.so',
+        'vendor/lib64/libchifeature2.so',
+        'vendor/lib64/libcommonchiutils.so',
+        'vendor/lib64/libisphwsetting.so',
+        'vendor/lib64/libmctfengine_stub.so',
+        'vendor/lib64/libmmcamera_cac.so',
+        'vendor/lib64/vendor.qti.hardware.camera.aon-service-impl.so',
+        'vendor/lib64/vendor.qti.hardware.camera.offlinecamera-service-impl.so',
+        'vendor/lib64/vendor.qti.hardware.camera.postproc@1.0-service-impl.so',
+    ): blob_fixup()
+        .replace_needed(
+            'android.hardware.graphics.allocator-V1-ndk.so',
+            'android.hardware.graphics.allocator-V2-ndk.so'
+    ),
+    # Display composer: links graphics.composer3-V2 while the graph resolves to
+    # V4. Platform ships V1-V4. This one matters -- without the composer there is
+    # no display.
+    'vendor/bin/hw/vendor.qti.hardware.display.composer-service': blob_fixup()
+        .replace_needed(
+            'android.hardware.graphics.composer3-V2-ndk.so',
+            'android.hardware.graphics.composer3-V3-ndk.so'
+    ),
+}  # fmt: skip
+
+module = ExtractUtilsModule(
+    'sm8635-common',
+    'motorola',
+    blob_fixups=blob_fixups,
+    lib_fixups=lib_fixups,
+    namespace_imports=namespace_imports,
+)
+
+if __name__ == '__main__':
+    utils = ExtractUtils.device(module)
+    utils.run()
