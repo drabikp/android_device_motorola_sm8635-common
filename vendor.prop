@@ -112,7 +112,16 @@ external_storage.sdcardfs.enabled=0
 
 graphics.gpu.profiler.support=true
 
-media.settings.xml=/vendor/etc/media_profiles_vendor.xml
+# media_profiles_vendor.xml is a SYMLINK in stock's vendor image, and
+# extract_utils drops symlinks (`find -type l` finds none under our extracted
+# vendor/etc), so the target never shipped. Pointing at a non-existent file is
+# FATAL, not benign: MediaProfiles only uses its built-in fallback list when the
+# property is UNSET; once set it goes straight to createInstanceFromXmlFile(),
+# whose CHECK(fopen) is LOG_ALWAYS_FATAL -- which aborted zygote in
+# preloadClasses -> CamcorderProfile.<clinit>, i.e. a boot loop caused purely by
+# this property port. Repointed at the cliffs profile we actually ship (SM8635
+# is "cliffs"; the official peridot device on the same SoC uses cliffs_v0).
+media.settings.xml=/vendor/etc/media_profiles_cliffs_v0.xml
 
 persist.audio.fluence.speaker=true
 persist.audio.fluence.voicecall=true
@@ -216,7 +225,8 @@ persist.vendor.ssr.restart_level=ALL_ENABLE
 persist.vendor.sys.diag_mdlog.getlogs_size=629145600
 persist.vendor.sys.reduce_qdss_log=1
 
-ro.adb.secure=1
+# ro.adb.secure=1 dropped: this is a userdebug port under active bring-up and
+# our system/build.prop does not override it.
 
 ro.af.client_heap_size_kbyte=7168
 
@@ -238,7 +248,10 @@ ro.camerax.extensions.enabled=true
 ro.config.vc_call_vol_default=3
 ro.config.vc_call_vol_steps=8
 
-ro.control_privapp_permissions=enforce
+# LineageOS convention is `log`, not `enforce`. Our system/build.prop does not
+# set this, so the vendor value wins, and a LineageOS privapp-permissions set
+# that differs from stock's makes SystemConfig throw at system_server init.
+ro.control_privapp_permissions=log
 
 ro.crypto.metadata_init_delete_all_keys.enabled=true
 

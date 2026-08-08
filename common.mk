@@ -12,6 +12,26 @@ PRODUCT_SOONG_NAMESPACES += $(COMMON_PATH)
 #                                                 AIDL interfaces
 PRODUCT_SOONG_NAMESPACES += hardware/qcom-caf/bootctrl
 PRODUCT_SOONG_NAMESPACES += vendor/qcom/opensource/commonsys-intf/display
+PRODUCT_SOONG_NAMESPACES += hardware/qcom-caf/sm8650
+
+# Display composer + allocator. WITHOUT THESE THERE IS NO DISPLAY AT ALL:
+# nothing declares android.hardware.graphics.composer3.IComposer/default (nor
+# the HIDL 2.1 fallback), so SurfaceFlinger aborts in HidlComposer's constructor
+# with "failed to get hwcomposer service" and restarts every 5 seconds forever.
+#
+# How they went missing: an earlier pass removed the blobs on the grounds that
+# they are "built from source by hardware/qcom-caf/sm8650/display" -- and put
+# them in add-missing-hals.sh's EXCLUDE list to keep them out -- but never added
+# the packages that would actually build them. So the exclusion held and nothing
+# replaced them. The source modules do exist (display/composer/Android.bp and
+# display/gralloc/Android.bp); they were simply never requested.
+# The gralloc module also provides the QTI mapper impl and its vintf fragment,
+# so the matching blobs are removed from proprietary-files.txt (they collided:
+# "overriding commands for target ...mapper-impl-qti-display.xml").
+PRODUCT_PACKAGES += \
+    vendor.qti.hardware.display.composer-service \
+    vendor.qti.hardware.display.allocator-service \
+    android.hardware.graphics.mapper@4.0-impl-qti-display
 
 # API level. Vendor is frozen at 34; see BoardConfigCommon.mk.
 PRODUCT_SHIPPING_API_LEVEL := 34

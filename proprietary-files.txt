@@ -790,7 +790,6 @@ vendor/lib64/libarmemlog.so
 vendor/lib64/libqdutils.so
 vendor/lib64/libdrmutils.so
 vendor/lib64/libqdMetaData.so
-vendor/lib64/hw/android.hardware.graphics.mapper@4.0-impl-qti-display.so
 vendor/lib64/libagmclient.so
 vendor/lib64/libagm_compress_plugin.so
 vendor/lib64/libagm_mixer_plugin.so
@@ -891,7 +890,6 @@ vendor/etc/init/fingerprint-fpc.rc
 vendor/etc/init/hostapd.android.rc
 vendor/etc/init/init.maxe.rc
 vendor/etc/init/init.qccvendor.rc
-vendor/etc/init/init.qti.display_boot.rc
 vendor/etc/init/init.qti.fm.rc
 vendor/etc/init/init.qti.graphics.rc
 vendor/etc/init/init.qti.qcv.rc
@@ -909,13 +907,11 @@ vendor/etc/init/vendor.mmi.carrier.rc
 vendor/etc/init/vendor.qsap.location.rc
 vendor/etc/init/vendor.qsap.qapeservice.rc
 vendor/etc/init/vendor.qsap.sensors.rc
-vendor/etc/init/vendor.qti.audio-adsprpc-service.rc
 vendor/etc/init/vendor.qti.diag_userdebug.rc
 vendor/etc/init/vendor.qti.hardware.limits-service.rc
 vendor/etc/init/vendor.qti.smp2p.rc
 vendor/etc/init/vendor.tsa.hdcp-IHDCPInterface.rc
 vendor/etc/vintf/manifest/android.hardware.drm-service.xml
-vendor/etc/vintf/manifest/android.hardware.graphics.mapper-impl-qti-display.xml
 vendor/etc/vintf/manifest/android.hardware.radio.config.xml
 vendor/etc/vintf/manifest/android.hardware.radio.data.xml
 vendor/etc/vintf/manifest/android.hardware.radio.messaging.xml
@@ -937,7 +933,6 @@ vendor/etc/vintf/manifest/imsdcservice-saidl.xml
 vendor/etc/vintf/manifest/ImsRtpService-aidl.xml
 vendor/etc/vintf/manifest/manifest_identity_credential.xml
 vendor/etc/vintf/manifest/manifest_non_qmaa_extn.xml
-vendor/etc/vintf/manifest/manifest_non_qmaa.xml
 vendor/etc/vintf/manifest/motorola.hardware.fdr.service.xml
 vendor/etc/vintf/manifest/motorola.hardware.health.service.xml
 vendor/etc/vintf/manifest/motorola.hardware.health.storage.service.xml
@@ -1237,6 +1232,13 @@ vendor/lib64/vendor.qti.hardware.radio.internal.deviceinfo-V1-ndk.so
 #
 # Cost: no StrongBox-backed keys (a hardware security level above TEE).
 
+# --- provided by the SOURCE display HAL (do not re-add) ------------------------
+# init.qti.display_boot.rc / .sh are installed by
+# hardware/qcom-caf/sm8650/display, which common.mk now builds
+# (vendor.qti.hardware.display.composer-service + allocator-service). Listing
+# them here as well makes kati fail with
+#   "overriding commands for target .../vendor/bin/init.qti.display_boot.sh"
+
 # --- DELIBERATELY NOT SHIPPED ------------------------------------------------
 # android.hardware.security.keymint-service.strongbox-thales (+ libjc_keymint-thales,
 # libjc_keymint_transport-thales): built against keymint AIDL V3 / rkp V3 while
@@ -1351,7 +1353,6 @@ vendor/bin/init.qcom.post_boot.sh
 vendor/bin/init.qcom.sdio.sh
 vendor/bin/init.qcom.sensors.sh
 vendor/bin/init.qcom.sh
-vendor/bin/init.qti.display_boot.sh
 vendor/bin/init.qti.graphics.sh
 vendor/bin/init.qti.kernel.debug-cliffs.sh
 vendor/bin/init.qti.kernel.debug-pineapple.sh
@@ -2182,7 +2183,6 @@ vendor/etc/init/vendor.qti.camera.provider-service_64.rc
 vendor/etc/init/vendor.qti.hardware.alarm-service.rc
 vendor/etc/init/vendor.qti.hardware.capabilityconfigstore@1.0-service.rc
 vendor/etc/init/vendor.qti.hardware.display.color-service.rc
-vendor/etc/init/vendor.qti.hardware.display.demura-service.rc
 vendor/etc/init/vendor.qti.hardware.iop@2.0-service.rc
 vendor/etc/init/vendor.qti.hardware.lights.service.rc
 vendor/etc/init/vendor.qti.hardware.perf2-hal-service.rc
@@ -2207,7 +2207,6 @@ vendor/etc/vintf/manifest/android.hardware.weaver-service.thales.xml
 vendor/etc/vintf/manifest/motorola.hardware.input@1.1-service.xml
 vendor/etc/vintf/manifest/qesdk-manager.xml
 vendor/etc/vintf/manifest/vendor.qti.gnss-service.xml
-vendor/etc/vintf/manifest/vendor.qti.hardware.display.demura-service.xml
 vendor/etc/vintf/manifest/vendor.qti.hardware.lights.service.xml
 vendor/etc/vintf/manifest/vendor.qti.hardware.qseecom@1.0-service.xml
 vendor/etc/vintf/manifest/vendor.qti.hardware.secureprocessor.xml
