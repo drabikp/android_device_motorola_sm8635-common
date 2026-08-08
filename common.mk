@@ -4,10 +4,14 @@ COMMON_PATH := device/motorola/sm8635-common
 
 PRODUCT_SOONG_NAMESPACES += $(COMMON_PATH)
 
-# hardware/qcom-caf/bootctrl declares its own Soong namespace, so its modules
-# are invisible until it is listed here. It is where android.hardware.boot-service.qti
-# is BUILT -- see the boot control block below.
+# These directories declare their own Soong namespaces, so their modules are
+# invisible -- PRODUCT_PACKAGES entries for them fail as "non-existent modules"
+# -- until they are listed here.
+#   hardware/qcom-caf/bootctrl                    android.hardware.boot-service.qti
+#   vendor/qcom/opensource/commonsys-intf/display the vendor.qti.hardware.display.*
+#                                                 AIDL interfaces
 PRODUCT_SOONG_NAMESPACES += hardware/qcom-caf/bootctrl
+PRODUCT_SOONG_NAMESPACES += vendor/qcom/opensource/commonsys-intf/display
 
 # API level. Vendor is frozen at 34; see BoardConfigCommon.mk.
 PRODUCT_SHIPPING_API_LEVEL := 34
@@ -94,6 +98,42 @@ PRODUCT_PACKAGES += \
 PRODUCT_PACKAGES += \
     vndservice \
     vndservicemanager
+
+# QTI display AIDL interface libraries, vendor variants.
+#
+# These are not display features -- they are here because BOOT depends on one of
+# them. qseecomd's listener manager dlopen()s /vendor/lib64/libops.so, which
+# links vendor.qti.hardware.display.config-V7-ndk.so:
+#
+#   E ListenerMngr: Init dlopen(libops.so, RLTD_NOW) is failed....
+#       dlopen failed: library "vendor.qti.hardware.display.config-V7-ndk.so"
+#       not found: needed by /vendor/lib64/libops.so
+#   E QSEECOMD: : ERROR: Failed to start listner services.
+#
+# and qseecomd then exits 255, which takes the whole TEE chain down with it.
+#
+# Note this class of failure is invisible to a DT_NEEDED walk from the service
+# binary, because libops.so is reached by dlopen, not by a link-time dependency.
+# It was found by sweeping every ELF in the vendor image for unresolved
+# DT_NEEDED entries; that sweep is the tool to reach for when a vendor process
+# dies instantly with no useful message.
+#
+# The other versions are shipped for the same reason and were found by the same
+# sweep -- V5 alone is needed by ten vendor libraries (libqti-perfd, qguard,
+# libqcodec2_utils, the *optfeature ones, libwfddisplayconfig_vendor ...). The
+# AIDL interface is frozen with versions 1-15 and is vendor_available, so each
+# version builds from vendor/qcom/opensource/commonsys-intf/display/aidl.
+# peridot ships these exactly this way (its device.mk lists
+# vendor.qti.hardware.display.config-V11-ndk.vendor).
+PRODUCT_PACKAGES += \
+    vendor.qti.hardware.display.config-V2-ndk.vendor \
+    vendor.qti.hardware.display.config-V5-ndk.vendor \
+    vendor.qti.hardware.display.config-V7-ndk.vendor
+
+PRODUCT_PACKAGES += \
+    vendor.qti.hardware.display.color-V1-ndk.vendor \
+    vendor.qti.hardware.display.demura-V1-ndk.vendor \
+    vendor.qti.hardware.display.postproc-V1-ndk.vendor
 
 # The /vendor mount points the fstab needs (see sm8635-common/Android.bp).
 # These come from the build now, so workspace/inject-vendor-mountpoints.sh --
