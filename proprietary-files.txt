@@ -2272,3 +2272,34 @@ vendor/etc/init/init.qti.display_boot.rc
 vendor/bin/init.qti.display_boot.sh
 vendor/lib64/hw/android.hardware.graphics.mapper@4.0-impl-qti-display.so
 
+# --- VINTF fragment for the power HAL: WITHOUT THIS ANDROID 16 CANNOT BOOT -----
+# The power HAL binary and its .rc were shipped, but this manifest fragment was
+# not, so nothing DECLARED android.hardware.power.IPower/default:
+#   servicemanager: Could not find android.hardware.power.IPower/default in the
+#   VINTF manifest. No alternative instances declared in VINTF.
+#
+# HintManagerService then takes an unguarded AOSP path:
+#   createIPower() -> ServiceManager.waitForDeclaredService(...) -> null
+#   mSupportInfo stays null -> mSupportInfo.headroom -> NullPointerException
+#   RuntimeException: Failed to create service HintManagerService
+# which is FATAL to system_server, 58 times, 21 lines into startOtherServices --
+# after PHASE_WAIT_FOR_DEFAULT_DISPLAY (100) completes. A device with no declared
+# power HAL simply cannot boot Android 16.
+#
+# Version 4 is correct and sufficient: compatibility_matrix.8.xml requires
+# android.hardware.power v4, and HintManagerService has an explicit
+# mPowerHalVersion == 4 fallback that synthesises a valid SupportInfo.
+#
+# It was missing because add-missing-hals.sh EXCLUDEs "power.xml" -- the third
+# boot bug caused by that list excluding a file nothing else provides.
+# Installed under a DIFFERENT FILENAME on purpose. vendor/qcom/opensource/power
+# already claims vendor/etc/vintf/manifest/power.xml as the vintf fragment of the
+# source-built android.hardware.power-service-qti, so shipping stock's fragment at
+# that path is a hard kati collision ("overriding commands for target"). That
+# source HAL is NOT in PRODUCT_PACKAGES, so the rule exists but nothing installs
+# it -- which is precisely why the manifest ended up missing from the image.
+# VINTF merges every *.xml in the fragment directory, so the name is irrelevant;
+# only the content matters. Keeping the stock BLOB (which links power-V4-ndk,
+# matching compatibility_matrix.8's requirement of v4) rather than switching to
+# the source HAL, which links V6 -- that is the ABI trap this port keeps hitting.
+vendor/etc/vintf/manifest/power.xml:vendor/etc/vintf/manifest/power-moto.xml

@@ -22,11 +22,21 @@
 # regex -- in file_contexts an exact path beats a pattern regardless of order.
 /dev/0:0:0:[0-9]+               u:object_r:vendor_bsg_device:s0
 
-# motorola.hardware.sensorext-service had NO label, so init refused to start it:
-#   Could not start service 'vendor.moto_sensorext' as it is not in a domain --
-#   /vendor/bin/hw/motorola.hardware.sensorext-service (labeled
-#   "u:object_r:vendor_file:s0") has incorrect label or no domain transition
-# Consequence: motorola.hardware.sensors.ISensorExt/default is never registered,
-# and hal_sensors_default then spams { find } on it forever while the sensors
-# multihal never comes up. This is stock's own label, verbatim.
-/(vendor|system/vendor)/bin/hw/motorola\.hardware\.sensorext-service  u:object_r:hal_graphics_composer_default_exec:s0
+# motorola.hardware.sensorext-service is deliberately left UNLABELLED for now.
+#
+# Stock labels it hal_graphics_composer_default_exec and registers
+# motorola.hardware.sensors.ISensorExt/default under hal_graphics_composer_service
+# -- Motorola reusing the composer's types for a sensor extension. Copying that
+# verbatim does NOT work here: AOSP's system/sepolicy/private/hal_graphics_composer.te
+# ends with hal_attribute_service(hal_graphics_composer, hal_graphics_composer_service),
+# whose neverallow rejects `allow hal_sensors_default hal_graphics_composer_service:
+# service_manager find`, so the policy will not build.
+#
+# Labelling the binary WITHOUT the matching service_contexts entry is worse than
+# leaving it alone: the service then starts and immediately SIGABRTs on
+# addService ('Check failed: status == STATUS_OK'), instead of simply never
+# starting. Unlabelled it is quiet and harmless.
+#
+# Doing this properly needs its own service type (e.g. vendor_hal_sensorext_service)
+# plus add/find rules, not stock's types. Sensors are not on the boot path --
+# revisit after the ROM boots.
