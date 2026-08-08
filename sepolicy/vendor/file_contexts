@@ -40,3 +40,15 @@
 # Doing this properly needs its own service type (e.g. vendor_hal_sensorext_service)
 # plus add/find rules, not stock's types. Sensors are not on the boot path --
 # revisit after the ROM boots.
+
+# The FPC fingerprint HAL had NO label, so init refused to start it -- while
+# sm8635-common/manifest.xml DECLARES android.hardware.biometrics.fingerprint.
+# That is the same declared-but-absent trap that weaver just demonstrated: a
+# system_server thread blocks in waitForDeclaredService forever. (It was not the
+# thread that tripped the watchdog this time, but it is the next one in line.)
+#
+# Stock uses vendor_hal_fingerprint_fpc_exec, a Motorola type our policy does not
+# define. hal_fingerprint_default_exec is AOSP's own type for an AIDL fingerprint
+# HAL and does exist here, so use that; any extra access the FPC implementation
+# needs will show up as denials rather than as a service that never runs.
+/(vendor|system/vendor)/bin/hw/android\.hardware\.biometrics\.fingerprint-service\.fpc  u:object_r:hal_fingerprint_default_exec:s0

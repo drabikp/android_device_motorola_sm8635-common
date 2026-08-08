@@ -849,7 +849,6 @@ vendor/bin/hw/android.hardware.nqnfc-service.nxp
 vendor/bin/hw/android.hardware.power-service
 vendor/bin/hw/android.hardware.secure_element-service.qti
 vendor/bin/hw/android.hardware.thermal-service.qti
-vendor/bin/hw/android.hardware.weaver-service.thales
 vendor/bin/hw/capabilityconfigstoretest
 vendor/bin/hw/com.motorola.thermalstatus@service
 vendor/bin/hw/dolbycodec2
@@ -2144,7 +2143,6 @@ vendor/etc/init/android.hardware.power-service.rc
 vendor/etc/init/android.hardware.secure_element-service.qti.rc
 vendor/etc/init/android.hardware.security.keymint-service-qti.rc
 vendor/etc/init/android.hardware.thermal-service.qti.rc
-vendor/etc/init/android.hardware.weaver-service.thales.rc
 vendor/etc/init/cnd.rc
 vendor/etc/init/diagcommd.rc
 vendor/etc/init/dlsc.rc
@@ -2203,7 +2201,6 @@ vendor/etc/init/wfdvndservice.rc
 vendor/etc/vintf/manifest/android.hardware.gnss-aidl-service-qti.xml
 vendor/etc/vintf/manifest/android.hardware.security.keymint-service-qti.xml
 vendor/etc/vintf/manifest/android.hardware.thermal-service.qti.xml
-vendor/etc/vintf/manifest/android.hardware.weaver-service.thales.xml
 vendor/etc/vintf/manifest/motorola.hardware.input@1.1-service.xml
 vendor/etc/vintf/manifest/qesdk-manager.xml
 vendor/etc/vintf/manifest/vendor.qti.gnss-service.xml
@@ -2363,3 +2360,28 @@ vendor/lib64/vendor.qti.qspmhal-V1-ndk.so
 #   libwifi-hal-qcom                          <- hardware/qcom/wlan
 # Audio and wifi therefore still have unresolved vendor links; both need the
 # source modules added to PRODUCT_PACKAGES instead (their own workstream).
+
+# --- WEAVER (Thales) DROPPED: it wedged system_server every 94 seconds ---------
+# Its vintf fragment DECLARED android.hardware.weaver.IWeaver/default, but the
+# service can never start: the rc marks it `disabled` and the only boot trigger is
+#     on init && property:ro.vendor.hw.felica=false
+# and ro.vendor.hw.felica is set NOWHERE -- not in any build.prop, and stock's
+# init.mmi.rc maps ro.boot.* -> ro.vendor.hw.* for device/hwrev/modelno/revision/
+# nav_keys but NOT felica. The only other trigger is vendor.ese.client.restart=1,
+# a runtime restart hook. So nothing starts it, on stock or here.
+#
+# Declared-but-absent is fatal, not cosmetic: LockSettingsService ->
+# SyntheticPasswordManager.getWeaverAidlService() calls
+# ServiceManager.waitForDeclaredService() from the system_server MAIN thread while
+# holding the SyntheticPasswordManager monitor, inside startOtherServices(). It
+# blocks forever; Watchdog then kills system_server:
+#     *** WATCHDOG KILLING SYSTEM PROCESS: Blocked in handler on main thread for 69s
+# The framework restarted every 94.1 +/- 0.4 s, nine times in one capture --
+# regardless of what the user was doing. It only LOOKED like "pressing Next on the
+# SIM screen reboots the phone" because the wizard is what happens to be on screen
+# when the timer expires. It is not even a reboot: /proc/uptime and dmesg are
+# monotonic across the whole capture and init/servicemanager/vold keep their pids.
+#
+# Weaver is optional (secure-element-backed PIN throttling) and the rest of the
+# Thales SE stack was already dropped for AIDL-version conflicts, so the binary
+# and rc go too rather than leaving a HAL that can never run.
