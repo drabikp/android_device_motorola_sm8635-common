@@ -1,0 +1,23 @@
+# qseecomd (domain tee) reads partition tables directly.
+#
+# gpt_init_service tries the UFS BSG char device first and, when that fails,
+# falls back to the plain block device:
+#
+#   E gpt_ufs_bsg: failed to open dev /dev/0:0:0:0 (error no: 13)
+#   E gpt: read_lba: ufs_bsg_read failed 13, fallback to try block device
+#   E gpt: failed to open dev /dev/block/sda (error no: 13)
+#
+# Both paths were denied, so the fallback could not rescue the primary. The
+# char-device half is fixed by labelling the nodes (see file_contexts); this is
+# the block-device half. Observed denials, all scontext=u:r:tee:s0 blk_file:
+#
+#   { read } vendor_gpt_block_device  (sda, sdd)   x6
+#   { read } vendor_xbl_block_device  (sdb, sdc)   x6
+#   { read } boot_block_device        (sdf)        x3
+#
+# Read-only on purpose: qseecomd only parses partition tables here. Do not
+# widen to rw -- writing to the boot/xbl LUNs from a vendor domain is exactly
+# what the platform neverallows are there to stop.
+allow tee vendor_gpt_block_device:blk_file r_file_perms;
+allow tee vendor_xbl_block_device:blk_file r_file_perms;
+allow tee boot_block_device:blk_file r_file_perms;

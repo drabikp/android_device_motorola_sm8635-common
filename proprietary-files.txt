@@ -197,6 +197,7 @@ vendor/lib64/librpmb.so
 vendor/lib64/libspl.so
 vendor/lib64/libssd.so
 vendor/lib64/vendor.qti.hardware.qseecom@1.0.so
+vendor/lib64/vendor.qti.hardware.qseecom-V1-ndk.so
 vendor/bin/dspservice
 vendor/etc/init/vendor.qti.hardware.dsp@1.0-service.rc
 vendor/etc/seccomp_policy/vendor.qti.hardware.dsp.policy
@@ -736,7 +737,7 @@ system_ext/lib64/vendor.qti.hardware.data.ka-V1-ndk.so
 vendor/lib64/libloc_core.so
 vendor/lib64/libqesdoem_query_sys.so
 system_ext/lib64/vendor.qti.hardware.dpmaidlservice-V1-ndk.so
-system_ext/lib64/vendor.qti.hardware.qseecom-V1-ndk.so
+system_ext/lib64/vendor.qti.hardware.qseecom-V1-ndk.so;MODULE_SUFFIX=_system_ext
 vendor/lib64/vendor.qti.ImsRtpService-aidl-Impl.so
 vendor/lib64/liblocation_api.so
 vendor/lib64/libwifiobserver.so

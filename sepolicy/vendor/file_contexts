@@ -1,0 +1,23 @@
+# Motorola SM8635 device file contexts.
+#
+# UFS BSG (SCSI generic) character devices.
+#
+# qseecomd's gpt_init_service enumerates the UFS LUNs and reads each disk's GPT
+# header through /dev/<host>:<channel>:<target>:<lun>. On arcfox those nodes are
+# 0:0:0:0 .. 0:0:0:5. QCOM's sepolicy_vndr labels only two of them --
+#
+#   /dev/0:0:0:49476   u:object_r:vendor_bsg_device:s0          (the WLUN)
+#   /dev/0:0:0:4       u:object_r:vendor_ufs_lun4_bsg_device:s0
+#
+# -- so 0, 1, 2, 3 and 5 fall through to the generic u:object_r:device:s0 and
+# every read is denied. The boot log shows exactly that asymmetry: LUN 4 reads
+# fine ("Successfully read 512 bytes from dev /dev/0:0:0:4") while all the
+# others fail with errno 13, qseecomd exits 255, and with no TEE the keymint
+# HAL never registers IKeyMintDevice -- which is what stalls keystore2, then
+# vold, then the whole boot.
+#
+# tee already holds `allow tee vendor_bsg_device:chr_file rw_file_perms` in
+# sm8650/generic/vendor/common/tee.te, so labelling is all that is needed here.
+# The literal /dev/0:0:0:4 entry in QCOM's file_contexts still wins over this
+# regex -- in file_contexts an exact path beats a pattern regardless of order.
+/dev/0:0:0:[0-9]+               u:object_r:vendor_bsg_device:s0
