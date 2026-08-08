@@ -142,14 +142,10 @@ blob_fixups: blob_fixups_user_type = {
     # legal declaration -- and IRemotelyProvisionedComponent only accepts 1-3,
     # which the blanket manifest rewrite (also removed, above) had pushed out of
     # range by bumping it to 4.
-    (
-        'vendor/lib64/libqtiidentitycredential.so',
-        'vendor/bin/hw/android.hardware.identity-service-qti',
-    ): blob_fixup()
-        .replace_needed(
-            'android.hardware.security.keymint-V2-ndk.so',
-            'android.hardware.security.keymint-V4-ndk.so'
-    ),
+    # The identity-credential pair's keymint-V2 -> V4 rewrite is also REMOVED.
+    # Same defect as the keymint chain above, and now free to fix: common.mk
+    # ships keymint-V2-ndk.vendor, which is what these two were compiled
+    # against and what stock ships in /vendor/lib64.
     # libkeystore-engine-wifi-hidl is what actually dragged keymint-V1 into
     # wpa_supplicant's closure (via keystore2-V1), long after the binary's own
     # NEEDED entries were clean. Transitive deps matter: fix the library, not
