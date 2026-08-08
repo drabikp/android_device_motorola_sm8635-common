@@ -99,6 +99,23 @@ PRODUCT_PACKAGES += \
     vndservice \
     vndservicemanager
 
+# KeyMint AIDL interface libraries, vendor variants.
+#
+# Motorola's keymint blobs (libqtikeymint.so, libtpa.so, libjc_keymint-thales.so
+# and the two keymint service binaries) are COMPILED against keymint AIDL V3.
+# Stock accommodates that by shipping keymint-V2-ndk.so and keymint-V3-ndk.so in
+# /vendor/lib64 -- both were in stock's vendor image and missing from ours, which
+# is why a previous session rewrote the blobs' DT_NEEDED to the V4 we did ship.
+#
+# That rewrite is now removed (see sm8635-common/extract-files.py). An AIDL NDK
+# backend is not ABI-compatible across a version bump, and the symptom of forcing
+# it was keymint-qti starting, going silent after three TimedRetryForwarder lines
+# at 2.6s, and never registering IKeyMintDevice -- which stalls keystore2, then
+# vold, then the boot. Shipping the versions the blobs actually want is the fix.
+PRODUCT_PACKAGES += \
+    android.hardware.security.keymint-V2-ndk.vendor \
+    android.hardware.security.keymint-V3-ndk.vendor
+
 # QTI display AIDL interface libraries, vendor variants.
 #
 # These are not display features -- they are here because BOOT depends on one of

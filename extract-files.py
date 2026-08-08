@@ -38,10 +38,12 @@ blob_fixups: blob_fixups_user_type = {
     # looks up V3 and blocks forever. Observed exactly that: keystore2 never
     # started because keymint advertised <version>3</version> while the binary
     # linked keymint-V4-ndk, and vold then waited on keystore2 indefinitely.
-    'vendor/etc/vintf/manifest/android.hardware.security.keymint-service-qti.xml': blob_fixup()
-        .regex_replace('<version>3</version>', '<version>4</version>'),
-    'vendor/etc/vintf/manifest/android.hardware.security.keymint-service.strongbox-thales.xml': blob_fixup()
-        .regex_replace('<version>3</version>', '<version>4</version>'),
+    # The two keymint manifest rewrites that used to be here are REMOVED, together
+    # with the ELF .replace_needed they existed to match (see the long note further
+    # down). The blobs link keymint-V3 again, so the manifest must say 3 again --
+    # and it must, because the same blanket regex also bumped
+    # IRemotelyProvisionedComponent to 4, which the 202504 compatibility matrix
+    # does not allow (it accepts rkp 1-3).
     'vendor/etc/vintf/manifest/android.hardware.health-service.qti.xml': blob_fixup()
         .regex_replace('<version>2</version>', '<version>4</version>'),
     'vendor/etc/vintf/manifest/android.hardware.sensors-multihal.xml': blob_fixup()
@@ -117,21 +119,29 @@ blob_fixups: blob_fixups_user_type = {
             'android.hardware.wifi-V1-ndk.so',
             'android.hardware.wifi-V4-ndk.so'
     ),
-    # keymint consumers: Motorola's blobs link keymint V2/V3 while the graph
-    # resolves to V4 (platform ships V1-V4). Bump them all rather than dropping
-    # the keystore chain -- without keymint/gatekeeper, vold cannot set up
-    # metadata encryption and /data never mounts.
-    (
-        'vendor/lib64/libqtikeymint.so',
-        'vendor/lib64/libtpa.so',
-        'vendor/lib64/libjc_keymint-thales.so',
-        'vendor/bin/hw/android.hardware.security.keymint-service-qti',
-        'vendor/bin/hw/android.hardware.security.keymint-service.strongbox-thales',
-    ): blob_fixup()
-        .replace_needed(
-            'android.hardware.security.keymint-V3-ndk.so',
-            'android.hardware.security.keymint-V4-ndk.so'
-    ),
+    # NOTE: the keymint V3->V4 .replace_needed that used to live here has been
+    # REMOVED. Do not put it back.
+    #
+    # It rewrote the ELF DT_NEEDED of libqtikeymint.so, libtpa.so,
+    # libjc_keymint-thales.so and the two keymint service binaries from
+    # keymint-V3-ndk.so to V4, because we shipped V4 and not V3. But an AIDL
+    # NDK backend is not ABI-compatible across a version bump -- these blobs are
+    # COMPILED against V3, and stock accommodates that by shipping
+    # keymint-V2-ndk.so AND keymint-V3-ndk.so in /vendor/lib64 (both are in
+    # stock's vendor image and were missing from ours). Relinking a V3 blob
+    # against V4 makes it load, and then wedge: keymint-qti starts, emits three
+    # TimedRetryForwarder_release lines at 2.6s and never says anything again,
+    # never reaches AServiceManager_addService, so keystore2 cannot build the
+    # TEE security level and vold blocks forever in "Generating wrapped storage
+    # key". No crash, no SELinux denial -- exactly what an ABI mismatch across
+    # a binder proxy looks like.
+    #
+    # The fix is to ship what the blobs were built against: common.mk now
+    # declares android.hardware.security.keymint-V2-ndk.vendor and -V3-ndk.vendor.
+    # The 202504 compatibility matrix accepts IKeyMintDevice 1-4, so V3 is a
+    # legal declaration -- and IRemotelyProvisionedComponent only accepts 1-3,
+    # which the blanket manifest rewrite (also removed, above) had pushed out of
+    # range by bumping it to 4.
     (
         'vendor/lib64/libqtiidentitycredential.so',
         'vendor/bin/hw/android.hardware.identity-service-qti',

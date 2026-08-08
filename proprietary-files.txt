@@ -1157,8 +1157,6 @@ vendor/bin/hw/motorola.hardware.fdr-service
 vendor/bin/hw/motorola.hardware.health-service
 vendor/bin/hw/motorola.hardware.health.storage-service
 vendor/bin/hw/sxrservice
-vendor/etc/vintf/manifest/android.hardware.security.sharedsecret-service.strongbox-thales.xml
-vendor/etc/permissions/android.hardware.strongbox_keystore-thales.xml
 vendor/lib64/motorola.hardware.fdr-V1-ndk.so
 vendor/lib64/motorola.hardware.health.aidl-V1-ndk.so
 vendor/lib64/vendor.qti.hardware.qconfig-V1-ndk.so
@@ -1220,6 +1218,24 @@ vendor/lib64/vendor.qti.hardware.radio.internal.deviceinfo-V1-ndk.so
 # add-missing-hals.sh has these in its EXCLUDE list; keep them there or the next
 # run resurrects the blob and the build fails with
 # "already defined by an in-tree source module".
+
+# --- STRONGBOX (Thales) DROPPED AGAIN -- keep it out ---------------------------
+# Removed: keymint-service.strongbox-thales, libjc_keymint{,_transport}-thales,
+# their .rc / vintf manifests, the sharedsecret strongbox manifest and the
+# strongbox_keystore permission.
+#
+# These are compiled against keymint AIDL V3, and so is the PRIMARY keymint
+# chain -- but libjc_keymint-thales also drags a V4 dependency in, and soong
+# refuses: "depends on multiple versions of the same aidl_interface:
+# android.hardware.security.keymint-V3-ndk-source, ...-V4-ndk-source".
+#
+# It only built before because everything was force-rewritten to V4, and that
+# rewrite is exactly what wedged keymint (see extract-files.py). StrongBox is
+# OPTIONAL -- the framework requires the /default TEE instance, which
+# keymint-service-qti provides. Shipping StrongBox is not worth breaking the
+# instance the boot depends on.
+#
+# Cost: no StrongBox-backed keys (a hardware security level above TEE).
 
 # --- DELIBERATELY NOT SHIPPED ------------------------------------------------
 # android.hardware.security.keymint-service.strongbox-thales (+ libjc_keymint-thales,
@@ -1434,7 +1450,6 @@ vendor/bin/zui_power_off_alarm
 vendor/bin/hw/android.hardware.biometrics.face-service.face-isv
 vendor/bin/hw/android.hardware.biometrics.face@1.0-service.face
 vendor/bin/hw/android.hardware.biometrics.fingerprint-service.fpc
-vendor/bin/hw/android.hardware.security.keymint-service.strongbox-thales
 vendor/bin/hw/android.hardware.wifi-service
 vendor/bin/hw/wpa_supplicant;DISABLE_CHECKELF
 vendor/lib/libaualgo_ainr_component.so
@@ -1621,8 +1636,6 @@ vendor/lib64/lib_ifaa_product.so
 vendor/lib64/lib-imsdcservice.so
 vendor/lib64/libipanat.so
 vendor/lib64/libiqi_bridge.so
-vendor/lib64/libjc_keymint-thales.so
-vendor/lib64/libjc_keymint_transport-thales.so
 vendor/lib64/libkeystore-wifi-hidl.so
 vendor/lib64/liblocation_api_msg.so
 vendor/lib64/liblocation_client_api.so
@@ -1742,7 +1755,7 @@ vendor/lib64/libtlpd_crypto.so
 vendor/lib64/libtlpd_internal.so
 vendor/lib64/libtlpd_logger.so
 vendor/lib64/libtlpd.so
-vendor/lib64/libtpa.so
+vendor/lib64/libtpa.so;DISABLE_DEPS
 vendor/lib64/libtracker_6dof_impl.so
 vendor/lib64/libTxPwrJni.so
 vendor/lib64/libubwcp.so
@@ -2129,7 +2142,6 @@ vendor/etc/init/android.hardware.identity-service-qti.rc
 vendor/etc/init/android.hardware.power-service.rc
 vendor/etc/init/android.hardware.secure_element-service.qti.rc
 vendor/etc/init/android.hardware.security.keymint-service-qti.rc
-vendor/etc/init/android.hardware.security.keymint-service.strongbox-thales.rc
 vendor/etc/init/android.hardware.thermal-service.qti.rc
 vendor/etc/init/android.hardware.weaver-service.thales.rc
 vendor/etc/init/cnd.rc
@@ -2190,7 +2202,6 @@ vendor/etc/init/vppservice.rc
 vendor/etc/init/wfdvndservice.rc
 vendor/etc/vintf/manifest/android.hardware.gnss-aidl-service-qti.xml
 vendor/etc/vintf/manifest/android.hardware.security.keymint-service-qti.xml
-vendor/etc/vintf/manifest/android.hardware.security.keymint-service.strongbox-thales.xml
 vendor/etc/vintf/manifest/android.hardware.thermal-service.qti.xml
 vendor/etc/vintf/manifest/android.hardware.weaver-service.thales.xml
 vendor/etc/vintf/manifest/motorola.hardware.input@1.1-service.xml
