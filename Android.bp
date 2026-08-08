@@ -10,7 +10,31 @@
 
 soong_namespace {
     imports: [
+        "hardware/qcom-caf/bootctrl",
         "hardware/qcom-caf/sm8650",
         "hardware/qcom-caf/wlan",
     ],
+}
+
+// The four directories the fstab mounts physical partitions onto INSIDE
+// /vendor (firmware_mnt <- modem, dsp <- dsp, bt_firmware <- bluetooth,
+// fsg <- fsg). They must exist in the image or all four are blocking `wait`
+// mounts against a non-existent path, and firmware_class.path
+// (/vendor/firmware_mnt/image) is unreachable.
+//
+// These were previously created by hand, after `mka vendorimage`, by
+// workspace/inject-vendor-mountpoints.sh -- because PRODUCT_COPY_FILES cannot
+// create an empty directory and Android 16's soong filesystem generator
+// rejects installing a stub into a new top-level vendor directory
+// ("Path is outside directory: ../firmware_mnt").
+//
+// `mkdir` is the module type that actually does this; hardware/qcom-caf/common
+// declares bt_firmware, dsp and firmware_mnt this way already, so only fsg --
+// which is Motorola-specific and has no upstream counterpart -- is declared
+// here. With all four coming from the build, the post-build injection step is
+// no longer needed.
+mkdir {
+    name: "vendor_fsg_mountpoint",
+    dir: "fsg",
+    vendor: true,
 }
