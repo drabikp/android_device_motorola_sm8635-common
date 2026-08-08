@@ -123,6 +123,7 @@ PRODUCT_PACKAGES += \
     android.hardware.security.keymint-V2-ndk.vendor \
     android.hardware.security.keymint-V3-ndk.vendor
 
+
 # QTI display AIDL interface libraries, vendor variants.
 #
 # These are not display features -- they are here because BOOT depends on one of

@@ -97,8 +97,9 @@ blob_fixups: blob_fixups_user_type = {
     # does not allow (it accepts rkp 1-3).
     'vendor/etc/vintf/manifest/android.hardware.health-service.qti.xml': blob_fixup()
         .regex_replace('<version>2</version>', '<version>4</version>'),
-    'vendor/etc/vintf/manifest/android.hardware.sensors-multihal.xml': blob_fixup()
-        .regex_replace('<version>2</version>', '<version>3</version>'),
+    # (the sensors-multihal.xml version rewrite is gone with it -- that file cannot
+    # be shipped as a blob at all, since AOSP's hardware/interfaces/sensors/aidl/multihal
+    # already defines it; the HAL is declared in sm8635-common/manifest.xml instead)
     'vendor/etc/vintf/manifest/android.hardware.wifi.supplicant.xml': blob_fixup()
         .regex_replace('<version>2</version>', '<version>5</version>'),
     'vendor/etc/vintf/manifest/bluetooth_audio.xml': blob_fixup()
@@ -117,6 +118,14 @@ blob_fixups: blob_fixups_user_type = {
     # in sm8635-common/proprietary-files.txt, and fixups only apply to the module
     # that owns the list. Putting them in arcfox/extract-files.py silently does
     # nothing (verified with readelf on the staged blob).
+    # Sensors: the blob links sensors-V2, but AOSP's own
+    # android.hardware.sensors-service.multihal module is in this build's graph and
+    # pulls V3, so requesting a V2 vendor variant fails with "depends on multiple
+    # versions of the same aidl_interface". Repointed to V3 and DECLARED as v3 in
+    # manifest.xml so the ELF and the VINTF entry agree -- the pairing that matters.
+    # (Ideally we would ship V2 and declare v2, as done for keymint; that needs the
+    # AOSP multihal module out of the graph, or a renamed prebuilt + DT_NEEDED
+    # repoint as done for tinyxml2. Revisit.)
     'vendor/bin/hw/android.hardware.sensors-service.multihal': blob_fixup()
         .replace_needed(
             'android.hardware.sensors-V2-ndk.so',

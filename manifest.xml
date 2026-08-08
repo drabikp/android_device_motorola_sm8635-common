@@ -147,4 +147,29 @@
         <transport>hwbinder</transport>
         <fqname>@1.0::IIFAADevice/default</fqname>
     </hal>
+
+    <!-- Sensors. NOT shippable as a vintf fragment blob: AOSP's
+         hardware/interfaces/sensors/aidl/multihal already defines
+         android.hardware.sensors-multihal.xml and kati fails with "already
+         defined by". Nothing installed it either, so android.hardware.sensors
+         was declared NOWHERE -- the multihal service aborted on addService and
+         SensorService had no sensors at all.
+
+         That is not cosmetic on a foldable: fold/device_state_configuration.xml
+         derives the device state from com.motorola.sensor.hinge_posture, and
+         only state 0 (CLOSED_HALL) can be reached from the lid switch alone. No
+         sensors means posture is unreadable, the state machine falls back to
+         CLOSED, and display_layout_configuration.xml then makes the COVER panel
+         the default display -- which is exactly why the setup wizard came up on
+         the outer screen.
+
+         Declared v3 to match the blob's rewritten ELF (see extract-files.py):
+         the ELF version and the VINTF version MUST agree, which is the pairing
+         that broke keymint. assemble_vintf validates this against the framework
+         matrix at build time, so if this builds, it is compatible. -->
+    <hal format="aidl">
+        <name>android.hardware.sensors</name>
+        <version>3</version>
+        <fqname>ISensors/default</fqname>
+    </hal>
 </manifest>
