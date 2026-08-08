@@ -161,6 +161,23 @@ BOARD_VENDOR_RAMDISK_KERNEL_MODULES_BLOCKLIST_FILE := $(COMMON_PATH)/prebuilt/mo
 
 # Verbatim from stock vendor_boot's bootconfig and vendor cmdline. androidboot.*
 # must go in BOARD_BOOTCONFIG (bootconfig section), the rest in the cmdline.
+# SELINUX IS RULED OUT -- the permissive test was RUN and is CONCLUSIVE.
+#
+# `androidboot.selinux=permissive` was re-added as a diagnostic and has been
+# removed again. Unlike the earlier attempt (which ran with 15 HAL binaries and
+# proved nothing), this one was a real test, on the current 68-HAL vendor, and
+# the flag was verifiably active: 122 AVC denials were logged versus 6 under
+# enforcing.
+#
+# Result: the boot hangs IDENTICALLY. keymint-qti's /proc state is unchanged --
+# main thread in futex_wait_queue, four threads parked in smcinvoke_ioctl. And
+# not one of the 122 denials involves keymint, tee, qseecom or smcinvoke.
+#
+# This matters because permissive also neutralises `dontaudit`, which ENFORCES a
+# denial while suppressing its log line -- the one way a policy gap could have
+# caused a silent hang. It did not. Do not spend time on SELinux for this bug.
+# The captured denial list is in workspace/permissive-denials.txt; it is the
+# work-list for sepolicy/vendor once the ROM boots, not a set of blockers.
 BOARD_BOOTCONFIG += \
     androidboot.hardware=qcom \
     androidboot.memcg=1 \
