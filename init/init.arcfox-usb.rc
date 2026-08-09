@@ -1,0 +1,53 @@
+# Restore the USB gadget config that Motorola's init blanks -- this is what gives
+# us adb. Without it the device NEVER enumerates on USB in Android, in any state.
+#
+# init.mmi.usb.rc deliberately blanks the config at load-bpf-programs:
+#
+#   on load-bpf-programs
+#       setprop vendor.usb.config            ${sys.usb.config}
+#       setprop persist.vendor.mot.usb.config ${persist.sys.usb.config:-" "}
+#       setprop persist.sys.usb.config       " "        <-- blanked
+#       setprop persist.vendor.usb.config    ${persist.sys.usb.config}
+#
+# and AOSP's init.usb.rc:109 then copies that blank forward:
+#
+#   on boot && property:persist.sys.usb.config=*
+#       setprop sys.usb.config ${persist.sys.usb.config}
+#
+# Restoring the saved value is the job of /vendor/bin/init.mmi.usb.sh, which
+# CANNOT RUN on this build:
+#
+#   E init: Could not start service 'vendor.mmi-usb-sh' as part of class
+#     'late_start': File /vendor/bin/init.mmi.usb.sh (labeled
+#     "u:object_r:vendor_file:s0") has incorrect label or no domain transition
+#     from u:r:init:s0 to another SELinux domain defined.
+#
+# So sys.usb.config is never set, the UDC is never bound, and adbd waits forever
+# on an endpoint that never comes up ("UsbFfs: connection terminated"), while
+# android.hardware.usb.gadget-service.qti logs "Usb Gadget setcurrent functions
+# failed". Setting sys.usb.configfs / sys.usb.controller / persist.vendor.usb.config
+# from vendor.prop (27a4c6d) could not fix this: those are set BEFORE the blanking
+# and are overwritten by it.
+#
+# TIMING IS THE WHOLE TRICK. From init.rc:
+#     576  trigger post-fs-data
+#     579  trigger load-bpf-programs      <-- the blanking happens here
+#     588  trigger early-boot             <-- so we must restore HERE
+#     589  trigger boot                   <-- ...before this reads it
+# post-fs-data is too early (it runs before the blank) and boot is too late.
+#
+# The other two properties the configfs path needs are already handled by
+# Motorola's own init, so they are deliberately NOT set here:
+#   sys.usb.configfs=1        init.mmi.usb.rc:838, `on boot`
+#   sys.usb.controller        init.mmi.usb.rc:245, from vendor.usb.controller
+#                             (=a600000.dwc3 in build.prop)
+# With sys.usb.config=adb, init.usb.configfs.rc:17-24 does the rest: start adbd,
+# then on sys.usb.ffs.ready symlink ffs.adb into configs/b.1/f1 and write the UDC.
+#
+# We force "adb" rather than restoring persist.vendor.mot.usb.config, because on a
+# device that has never had a good boot that saved value is itself " " -- the
+# blanking ran before anything ever set a real one. Forcing it is also what we want
+# for a bring-up ROM. Runtime mode changes (MTP etc.) still work: UsbDeviceManager
+# sets sys.usb.config directly and does not go through this path.
+on early-boot
+    setprop persist.sys.usb.config adb

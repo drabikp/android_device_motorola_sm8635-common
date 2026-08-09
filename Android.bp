@@ -57,3 +57,13 @@ prebuilt_etc {
     vendor: true,
 }
 
+// Restores the USB gadget config that init.mmi.usb.rc blanks, which is what
+// gives us adb. See the file itself for the full mechanism and the trigger
+// ordering that makes `on early-boot` the only correct place for it.
+prebuilt_etc {
+    name: "init.arcfox-usb.rc",
+    src: "init/init.arcfox-usb.rc",
+    sub_dir: "init",
+    vendor: true,
+}
+

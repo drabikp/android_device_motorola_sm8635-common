@@ -226,22 +226,41 @@ PRODUCT_PACKAGES += \
 # dead code here, because libvintf reads manifest_${ro.boot.product.vendor.sku}.xml
 # and returns without ever falling back (stock ships no manifest.xml at all).
 # Fragments under /vendor/etc/vintf/manifest/ are always merged.
-# NOT ENABLED YET. Declaring android.hardware.sensors while the multihal cannot
-# actually register it recreates the weaver bug exactly: something blocks in
-# waitForDeclaredService (718 'Waited one second for
-# android.hardware.sensors.ISensors/default') and Watchdog kills system_server
-# ('Blocked in handler on main thread (main) for 65s'). The boot regressed from
-# 'completes setup' to 'never boots' the moment this was added.
+# ENABLED as of bc23. It was disabled because declaring android.hardware.sensors
+# while the multihal could not register recreated the weaver bug exactly: something
+# blocked in waitForDeclaredService and Watchdog killed system_server every 65s.
+# The gating condition was "re-enable ONLY after the multihal is proven to
+# register". That condition is now MET, and bc22 is the proof:
 #
-# Undeclared is strictly better than declared-but-unstartable: with it absent,
-# SensorService simply has no sensors and the device boots.
+#   - 134ca03 gave hal_sensors_default binder_call to hal_graphics_composer_default,
+#     which killed the ISensorExt empty-descriptor SIGSEGV. bc22 has ZERO
+#     'associateClass ... descriptor is actually' errors (bc21 had 95).
+#   - The multihal now runs all the way to its registration call and dies THERE,
+#     on nothing but the missing declaration:
+#         Abort message: 'Check failed: status == STATUS_OK (status=-3, STATUS_OK=0)'
+#         #03 android.hardware.sensors-service.multihal (main.cfi+3328)
+#     -3 is EX_ILLEGAL_ARGUMENT from addService() via meetsDeclarationRequirements():
+#     a name starting with "android.hardware." that is not VINTF-declared cannot be
+#     registered. Confirmed: android.hardware.sensors appears nowhere under
+#     out/.../vendor/etc/vintf/.
 #
-# Re-enable ONLY after the multihal is proven to register, which needs the
-# sensorext SIGABRT in SensorExt::initAlsComp fixed first -- the multihal blocks
-# waiting on motorola.hardware.sensors.ISensorExt/default, so it never finishes
-# init and never calls addService.
-# PRODUCT_PACKAGES += \
-#     android.hardware.sensors-arcfox.xml
+# So the declaration is now the ONLY thing rejecting a service that otherwise
+# reaches addService -- the opposite of the situation that justified disabling it.
+#
+# The old note here also blamed a "SIGABRT in SensorExt::initAlsComp". That is
+# FALSIFIED: vendor.moto_sensorext starts once, never aborts and never restarts;
+# it registered fine and simply could not be called into.
+PRODUCT_PACKAGES += \
+    android.hardware.sensors-arcfox.xml
+
+
+# adb. init.mmi.usb.rc blanks persist.sys.usb.config at load-bpf-programs and the
+# script that restores it (/vendor/bin/init.mmi.usb.sh) cannot run because it is
+# unlabelled, so the UDC is never bound and the device NEVER enumerates on USB in
+# Android. This rc restores it at early-boot -- after the blanking, before
+# `on boot` reads it. Full mechanism in the file.
+PRODUCT_PACKAGES += \
+    init.arcfox-usb.rc
 
 
 # Bluetooth audio HAL. Without it com.android.bluetooth HARD-ABORTS on every
