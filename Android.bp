@@ -77,3 +77,12 @@ prebuilt_etc {
     vendor: true,
 }
 
+// WiFi VINTF declaration. Ships only after bc25 proved the service reaches
+// addService and fails solely on the missing declaration (-3). See the file.
+prebuilt_etc {
+    name: "android.hardware.wifi-arcfox.xml",
+    src: "vintf/android.hardware.wifi-arcfox.xml",
+    sub_dir: "vintf/manifest",
+    vendor: true,
+}
+

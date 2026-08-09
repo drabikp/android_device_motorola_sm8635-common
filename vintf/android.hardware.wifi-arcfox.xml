@@ -1,0 +1,42 @@
+<!-- Declares the WiFi HAL. Ships in the cycle AFTER init.arcfox-wifi.rc, on
+     purpose.
+
+     The rule on this device is: never declare a HAL in VINTF until its service is
+     PROVEN to reach registration. Declaring one that cannot register wedges its
+     client in an untimed waitForDeclaredService and has cost four boots here
+     (weaver, fingerprint, NFC, and a premature sensors declaration).
+
+     bc25 supplied that proof. With only the init rc in place, the service starts,
+     initialises, and dies at exactly one point:
+
+       I android.hardware.wifi-service: Wifi Hal is booting up...
+       F android.hardware.wifi-service: service.cpp:64] Check failed:
+           result == STATUS_OK (result=-3, STATUS_OK=0) Failed to register wifi HAL
+
+     -3 is EX_ILLEGAL_ARGUMENT from AServiceManager_addService via
+     meetsDeclarationRequirements(): an "android.hardware." name that is not
+     VINTF-declared cannot register. Nothing else is wrong; it got past
+     "booting up", i.e. past HAL init, and the missing declaration is the only
+     thing rejecting it. Same sequence that took sensors from a boot-killing crash
+     loop to 68 working sensors (bc22 fix crash -> reaches addService -> bc23
+     declare -> registers).
+
+     Version 4 is read off the binary, not assumed: android.hardware.wifi-service
+     links android.hardware.wifi-V4-ndk.so, and that library is present in
+     /vendor/lib64. The instance name is service.cpp:57,
+     Wifi::descriptor + "/default".
+
+     Filename deliberately differs from any AOSP-shipped fragment name so kati
+     cannot fail with "already defined by", the same reason
+     android.hardware.sensors-arcfox.xml is named as it is.
+
+     The kernel side is already up: qca_cld3_kiwi_v2, cnss2, cfg80211, mac80211
+     and rmnet_wlan are all loaded. There is simply no wlan0 yet, because nothing
+     had ever called into the HAL to create one. -->
+<manifest version="1.0" type="device">
+    <hal format="aidl">
+        <name>android.hardware.wifi</name>
+        <version>4</version>
+        <fqname>IWifi/default</fqname>
+    </hal>
+</manifest>

@@ -268,7 +268,8 @@ PRODUCT_PACKAGES += \
 # does. It is expected to abort on addService with -3 until the VINTF fragment
 # lands in the NEXT cycle -- that abort is the proof it reaches registration.
 PRODUCT_PACKAGES += \
-    init.arcfox-wifi.rc
+    init.arcfox-wifi.rc \
+    android.hardware.wifi-arcfox.xml
 
 
 # Bluetooth audio HAL. Without it com.android.bluetooth HARD-ABORTS on every
