@@ -184,8 +184,22 @@ PRODUCT_PACKAGES += \
 # dead code here, because libvintf reads manifest_${ro.boot.product.vendor.sku}.xml
 # and returns without ever falling back (stock ships no manifest.xml at all).
 # Fragments under /vendor/etc/vintf/manifest/ are always merged.
-PRODUCT_PACKAGES += \
-    android.hardware.sensors-arcfox.xml
+# NOT ENABLED YET. Declaring android.hardware.sensors while the multihal cannot
+# actually register it recreates the weaver bug exactly: something blocks in
+# waitForDeclaredService (718 'Waited one second for
+# android.hardware.sensors.ISensors/default') and Watchdog kills system_server
+# ('Blocked in handler on main thread (main) for 65s'). The boot regressed from
+# 'completes setup' to 'never boots' the moment this was added.
+#
+# Undeclared is strictly better than declared-but-unstartable: with it absent,
+# SensorService simply has no sensors and the device boots.
+#
+# Re-enable ONLY after the multihal is proven to register, which needs the
+# sensorext SIGABRT in SensorExt::initAlsComp fixed first -- the multihal blocks
+# waiting on motorola.hardware.sensors.ISensorExt/default, so it never finishes
+# init and never calls addService.
+# PRODUCT_PACKAGES += \
+#     android.hardware.sensors-arcfox.xml
 
 
 # Bluetooth audio HAL. Without it com.android.bluetooth HARD-ABORTS on every
