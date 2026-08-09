@@ -22,24 +22,6 @@
 # regex -- in file_contexts an exact path beats a pattern regardless of order.
 /dev/0:0:0:[0-9]+               u:object_r:vendor_bsg_device:s0
 
-# motorola.hardware.sensorext-service is deliberately left UNLABELLED for now.
-#
-# Stock labels it hal_graphics_composer_default_exec and registers
-# motorola.hardware.sensors.ISensorExt/default under hal_graphics_composer_service
-# -- Motorola reusing the composer's types for a sensor extension. Copying that
-# verbatim does NOT work here: AOSP's system/sepolicy/private/hal_graphics_composer.te
-# ends with hal_attribute_service(hal_graphics_composer, hal_graphics_composer_service),
-# whose neverallow rejects `allow hal_sensors_default hal_graphics_composer_service:
-# service_manager find`, so the policy will not build.
-#
-# Labelling the binary WITHOUT the matching service_contexts entry is worse than
-# leaving it alone: the service then starts and immediately SIGABRTs on
-# addService ('Check failed: status == STATUS_OK'), instead of simply never
-# starting. Unlabelled it is quiet and harmless.
-#
-# Doing this properly needs its own service type (e.g. vendor_hal_sensorext_service)
-# plus add/find rules, not stock's types. Sensors are not on the boot path --
-# revisit after the ROM boots.
 
 # The FPC fingerprint HAL had NO label, so init refused to start it -- while
 # sm8635-common/manifest.xml DECLARES android.hardware.biometrics.fingerprint.
@@ -52,3 +34,7 @@
 # HAL and does exist here, so use that; any extra access the FPC implementation
 # needs will show up as denials rather than as a service that never runs.
 /(vendor|system/vendor)/bin/hw/android\.hardware\.biometrics\.fingerprint-service\.fpc  u:object_r:hal_fingerprint_default_exec:s0
+
+# See hal_sensorext.te: labelling the binary AND adding the service_contexts
+# entry must happen together.
+/(vendor|system/vendor)/bin/hw/motorola\.hardware\.sensorext-service  u:object_r:vendor_hal_sensorext_exec:s0

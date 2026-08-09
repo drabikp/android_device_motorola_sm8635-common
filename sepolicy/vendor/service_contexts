@@ -1,0 +1,4 @@
+# Motorola HAL service instances. See service.te for why these use our own types
+# rather than stock's (stock's choice trips an AOSP neverallow).
+motorola.hardware.sensors.ISensorExt/default                              u:object_r:vendor_hal_sensorext_service:s0
+vendor.arcsoft.hardware.camera.postproc.IPostProcService/default          u:object_r:vendor_hal_arcsoftpp_service:s0

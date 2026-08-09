@@ -1,0 +1,15 @@
+# ArcSoft camera post-processing service -- camera provider crash loop.
+#
+# vendor.qti.camera.provider-service_64 SIGABRTed 176 times with
+#   Abort message: 'SharedRefBase: destructed but still able to lock weak_ptr'
+#   (and 'FORTIFY: pthread_mutex_destroy called on a destroyed mutex')
+# at libarcsoftpostprocservice.so ArcPostProcService::registerService()+632.
+#
+# Cause, with 176/176 pid correlation:
+#   avc: denied { add } for
+#     name=vendor.arcsoft.hardware.camera.postproc.IPostProcService/default
+#     scontext=u:r:hal_camera_default:s0 tcontext=u:object_r:default_android_service:s0
+# addService() fails, BnPostProcService is then destroyed while a strong
+# reference is still live, and libbinder aborts. So the crash is a SELinux
+# labelling bug, not a bad blob.
+allow hal_camera_default vendor_hal_arcsoftpp_service:service_manager add;

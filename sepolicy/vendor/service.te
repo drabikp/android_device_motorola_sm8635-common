@@ -1,0 +1,8 @@
+# Service types for Motorola HALs that stock declares in VINTF but whose stock
+# SELinux types do not exist in our policy. Defining our own is deliberate:
+# copying stock's types verbatim does not work (stock registers ISensorExt under
+# hal_graphics_composer_service, and AOSP's
+# hal_attribute_service(hal_graphics_composer, ...) neverallow rejects granting
+# hal_sensors_default `find` on it -- the policy will not build).
+type vendor_hal_sensorext_service, service_manager_type;
+type vendor_hal_arcsoftpp_service, service_manager_type;
