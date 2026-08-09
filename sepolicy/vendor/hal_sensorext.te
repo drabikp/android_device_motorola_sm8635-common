@@ -6,3 +6,42 @@
 # hal_attribute_service(hal_graphics_composer, ...) neverallow.
 allow hal_sensors_default vendor_hal_sensorext_service:service_manager find;
 allow hal_graphics_composer_default vendor_hal_sensorext_service:service_manager add;
+
+# ...and finding it is not enough. `find` only gets the multihal a binder HANDLE
+# from servicemanager; the first thing libbinder does with it is send an
+# INTERFACE_TRANSACTION to read the interface descriptor, and that is a binder
+# CALL into the sensorext process -- which runs as hal_graphics_composer_default,
+# because its binary carries hal_graphics_composer_default_exec (see
+# file_contexts). Without this rule that transaction is denied 104 times:
+#
+#   avc: denied { call } scontext=u:r:hal_sensors_default:s0
+#        tcontext=u:r:hal_graphics_composer_default:s0 tclass=binder
+#
+# so getInterfaceDescriptor() returns "" and the multihal fails:
+#
+#   E ...multihal: associateClass: Expecting binder to have class
+#     'motorola.hardware.sensors.ISensorExt' but descriptor is actually ''.
+#
+# The ISensorExt proxy is then NULL and sensors.qsh.so dereferences it in
+# ambient_light_alt::ambient_light_alt() -> SIGSEGV, 23 times, so the multihal
+# never registers and the device has NO SENSORS AT ALL.
+#
+# That is also why the UI is stuck on the cover panel. device_state_configuration.xml
+# keys every fold posture on com.motorola.sensor.hinge_posture, so with no sensors:
+#   E DeviceStateProviderImpl: Failed to find Sensor with type:
+#       com.motorola.sensor.hinge_posture and name: Hinge Posture  Wakeup
+#   E DeviceStateManagerService: Cannot notify device state info change before
+#       the initial state has been committed.
+# DeviceStateManagerService never commits an initial posture, so the framework
+# never switches to the inner display. It was never a mirroring problem, which is
+# why config_localDisplaysMirrorContent=false (arcfox bcfacb9) did not help.
+#
+# NOTE this supersedes the older "sensorext SIGABRT in SensorExt::initAlsComp"
+# theory, which is FALSIFIED: vendor.moto_sensorext starts exactly once (pid 2338
+# in bc20), never aborts and never restarts. It is alive the whole time; the
+# caller simply cannot talk to it.
+#
+# No neverallow blocks this: AOSP only neverallows ADDING
+# hal_graphics_composer_service/_hwservice (already avoided by using our own
+# vendor_hal_sensorext_service type above) and hal_graphics_composer_server fork.
+binder_call(hal_sensors_default, hal_graphics_composer_default)
