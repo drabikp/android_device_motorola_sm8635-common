@@ -1,0 +1,27 @@
+# The sensors HAL creates the lid switch as a uinput device, and was denied.
+#
+#   E sensors-hal: mot_flip:122, mot_flip: failed to open uinput: Permission denied
+#   avc: denied { write } for comm="android.hardwar" name="uinput" dev="tmpfs"
+#        scontext=u:r:hal_sensors_default:s0 tcontext=u:object_r:uhid_device:s0
+#        tclass=chr_file permissive=0
+#
+# That is the BINDING constraint on this device's fold logic, not the hinge
+# sensor. MotFlip_LID (SW_LID) is a uinput node the HAL creates; denied, it never
+# appears, and EventHub's whole inventory is gpio-keys, pmic_pwrkey, pmic_resin,
+# double-tap, s-double-tap, gdx_cli_0, goodix_ts -- no lid.
+#
+# EVERY one of the seven states in fold/device_state_configuration.xml carries a
+# <lid-switch> condition, and DeviceStateProviderImpl's LidSwitchBooleanSupplier
+# throws IllegalStateException("Have not received lid switch value") while
+# mIsLidOpen is null, so the state is skipped. States 1-5 are additionally hard
+# false because com.motorola.sensor.hinge_posture is missing. Result:
+#   DeviceStateProviderImpl: No declared device states match any of the required conditions
+#   DeviceStateManagerService: Cannot notify device state info change before the
+#                              initial state has been committed
+# and the device state stays INVALID (= STATE_DEFAULT = -1), so
+# display_layout_configuration.xml is parsed but NEVER APPLIED.
+#
+# With this rule, and even with the hinge sensor still broken, the provider falls
+# through states 1-5 and lands on state 6 OPENED_HALL (lid-only, evaluated last):
+# inner primary, outer disabled -- the correct open-device behaviour.
+allow hal_sensors_default uhid_device:chr_file rw_file_perms;
