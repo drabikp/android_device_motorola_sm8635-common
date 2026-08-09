@@ -67,3 +67,13 @@ prebuilt_etc {
     vendor: true,
 }
 
+// Starts the WiFi HAL, which had no init rc at all. See the file for the kernel
+// state that makes this worthwhile and for why the VINTF declaration must wait
+// for a separate cycle.
+prebuilt_etc {
+    name: "init.arcfox-wifi.rc",
+    src: "init/init.arcfox-wifi.rc",
+    sub_dir: "init",
+    vendor: true,
+}
+

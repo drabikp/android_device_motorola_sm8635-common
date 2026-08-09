@@ -1,0 +1,42 @@
+# Start the WiFi HAL. WiFi is completely absent without this: no
+# android.hardware.wifi.IWifi/* in `service list`, no wlan0, no wpa_supplicant,
+# and system_server logs
+#   am_wtf SupplicantStaIfaceHal: Failed to get internal ISupplicantStaIfaceHal instance
+#
+# /vendor/bin/hw/android.hardware.wifi-service IS shipped and all 14 of its
+# DT_NEEDED resolve inside the vendor namespace, but /vendor/etc/init/ had only
+# android.hardware.wifi.supplicant-service.rc and the wifidisplay one -- nothing
+# ever started the HAL itself. Same "HAL binary shipped with no init .rc" class as
+# HANDOFF-NEXT.md section 0.3.
+#
+# The kernel side is already healthy, which is what makes this worth doing:
+#   qca_cld3_kiwi_v2  12144640  0        <- driver loaded
+#   cnss2 / cfg80211 / mac80211 / rmnet_wlan  all loaded
+# but /sys/class/net has no wlan interface, because nothing calls into the HAL to
+# create one.
+#
+# Contents follow AOSP's own
+# hardware/interfaces/wifi/aidl/default/android.hardware.wifi-service.rc
+# verbatim. The binary is Motorola's prebuilt but it is the standard AIDL wifi
+# service, and libwifi-hal.so is the real Qualcomm implementation (551 KB, linking
+# libcld80211 + libnl). Note its 8-byte exported functions are CFI jump-table
+# thunks, NOT stubs -- do not read symbol size as evidence of a stub on this build.
+#
+# EXPECTED OUTCOME OF THIS CHANGE ALONE: the service starts and then ABORTS on
+# addService with status -3 (EX_ILLEGAL_ARGUMENT from meetsDeclarationRequirements),
+# because android.hardware.wifi is not yet VINTF-declared. That abort is the POINT:
+# it is the proof that the service gets all the way to registration, which is the
+# precondition for declaring it. This is the same two-step that took sensors from
+# a boot-killing crash loop to 68 working sensors:
+#   bc22  fix the crash        -> multihal reaches addService, fails -3
+#   bc23  then declare in VINTF -> registers
+# Declaring before that proof is what cost this device its boot in bc18.
+#
+# So: do NOT add a VINTF fragment for android.hardware.wifi in the same cycle as
+# this file.
+service vendor.wifi_hal_legacy /vendor/bin/hw/android.hardware.wifi-service
+    interface aidl android.hardware.wifi.IWifi/default
+    class hal
+    capabilities NET_ADMIN NET_RAW SYS_MODULE
+    user wifi
+    group wifi gps

@@ -263,6 +263,14 @@ PRODUCT_PACKAGES += \
     init.arcfox-usb.rc
 
 
+# WiFi. The HAL binary and all its dependencies are already shipped and the
+# qca_cld3_kiwi_v2 driver is loaded, but nothing started the service. This rc
+# does. It is expected to abort on addService with -3 until the VINTF fragment
+# lands in the NEXT cycle -- that abort is the proof it reaches registration.
+PRODUCT_PACKAGES += \
+    init.arcfox-wifi.rc
+
+
 # Bluetooth audio HAL. Without it com.android.bluetooth HARD-ABORTS on every
 # enable attempt, which is the flashing BT toggle:
 #   F bluetooth: LE Audio Client requires Bluetooth Audio HAL V2.1 at least.
