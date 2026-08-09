@@ -521,3 +521,31 @@ vendor.wv.oemcrypto.debug.enable_hlos_data_path=true
 vendor.wv.oemcrypto.debug.enable_prov40=true
 
 wifi.aware.interface=wifi-aware0
+
+# --- USB: without these the device never enumerates, so there is no adb --------
+# init.mmi.usb.sh is unlabelled (u:object_r:vendor_file:s0), so init refuses it:
+#   Could not start service 'vendor.mmi-usb-sh' ... has incorrect label or no
+#   domain transition from u:r:init:s0
+# That script is what restores persist.sys.usb.config after init.mmi.usb.rc
+# deliberately blanks it at load_bpf_programs. Without it:
+#   Command 'setprop vendor.usb.config ${sys.usb.config}' ... failed:
+#   property 'sys.usb.config' doesn't exist
+# and since vendor.prop sets vendor.usb.use_gadget_hal=0, Motorola's design has
+# the INIT RC bind the UDC, not the HAL -- every
+#   write /config/usb_gadget/g1/UDC ${sys.usb.controller}
+# in init.mmi.usb.rc is gated on sys.usb.config and sys.usb.configfs, neither of
+# which is ever set. So the UDC is never bound, and the result is
+#   libusbconfigfs: Gadget cannot be pulled down
+#   android.hardware.usb.gadget-service.qti: Usb Gadget setcurrent functions failed
+#   UsbDeviceManager: Usb setCurrentUsbFunctionsCb failed, functions:1, status:1
+# while adbd sits waiting on a gadget that never pulls up. dwc3 itself is healthy
+# (b_sess_vld, turn on gadget, role DEVICE) and there is not one USB or configfs
+# SELinux denial in the whole capture.
+#
+# persist.vendor.usb.config is Motorola's own entry point: init.mmi.usb.rc has
+# `on property:persist.vendor.usb.config=*` which sets persist.sys.usb.config.
+# Labelling init.mmi.usb.sh properly is still the complete fix (it needs stock's
+# init_usb domain plus the vendor_mot_*_prop types we do not have yet).
+sys.usb.configfs=1
+sys.usb.controller=a600000.dwc3
+persist.vendor.usb.config=adb

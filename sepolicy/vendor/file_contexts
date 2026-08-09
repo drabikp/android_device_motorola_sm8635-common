@@ -37,4 +37,12 @@
 
 # See hal_sensorext.te: labelling the binary AND adding the service_contexts
 # entry must happen together.
-/(vendor|system/vendor)/bin/hw/motorola\.hardware\.sensorext-service  u:object_r:vendor_hal_sensorext_exec:s0
+# Stock runs this binary in hal_graphics_composer_default, which already carries
+# the /mnt/vendor/persist, display and sensor access it needs. Our bespoke
+# vendor_hal_sensorext domain had only init_daemon_domain, and the service
+# registered fine and then SIGABRTed on its first transaction inside
+# SensorExt::initAlsComp reading /mnt/vendor/persist/sensors/als_* (84 crashes in
+# 410s). No AVC was logged for vendor_hal_sensorext, so this is a stock-parity
+# argument rather than a proven denial; if it still aborts, check whether those
+# als_* files exist under /mnt/vendor/persist/sensors at all.
+/(vendor|system/vendor)/bin/hw/motorola\.hardware\.sensorext-service  u:object_r:hal_graphics_composer_default_exec:s0

@@ -1,28 +1,8 @@
-# motorola.hardware.sensorext-service -- THE COVER-DISPLAY ROOT CAUSE.
-#
-# motorola.hardware.sensors.ISensorExt/default is declared in
-# sm8635-common/manifest.xml, and the sensors multihal itself BLOCKS waiting for
-# it:
-#   libbinder.ServiceManagerCppClient: Waiting for service
-#     'motorola.hardware.sensors.ISensorExt/default' on '/dev/binder'...
-# (the waiting pid IS hal_sensors_default). So no sensors come up at all -- and
-# on this foldable that means no hinge posture, so DeviceStateManager can only
-# reach state 0 (CLOSED) from the lid switch, and
-# fold/display_layout_configuration.xml then makes the COVER panel the default
-# display. That is why the setup wizard appears on the outer screen.
-#
-# It was doubly dead: the binary had no label (init: "has incorrect label or no
-# domain transition"), AND there was no service_contexts entry (avc: denied
-# { find } ... tcontext=default_android_service). Fixing only one of the two
-# converts "never starts" into "starts, then SIGABRTs on addService" -- which is
-# exactly what happened on an earlier attempt, so all of it lands together.
-type vendor_hal_sensorext, domain;
-type vendor_hal_sensorext_exec, exec_type, vendor_file_type, file_type;
-
-init_daemon_domain(vendor_hal_sensorext)
-binder_use(vendor_hal_sensorext)
-add_service(vendor_hal_sensorext, vendor_hal_sensorext_service)
-
-# The sensors multihal is the client that is currently blocked on it.
+# The sensorext binary now uses stock's hal_graphics_composer_default_exec label
+# (see file_contexts), so the bespoke vendor_hal_sensorext DOMAIN is gone. The
+# SERVICE type stays in service.te, because service_contexts still maps
+# motorola.hardware.sensors.ISensorExt/default to it and that avoids stock's
+# hal_graphics_composer_service, which trips AOSP's
+# hal_attribute_service(hal_graphics_composer, ...) neverallow.
 allow hal_sensors_default vendor_hal_sensorext_service:service_manager find;
-binder_call(hal_sensors_default, vendor_hal_sensorext)
+allow hal_graphics_composer_default vendor_hal_sensorext_service:service_manager add;

@@ -1,0 +1,29 @@
+<!-- Declares the sensors HAL as a VINTF FRAGMENT, not in manifest.xml.
+
+     sm8635-common/manifest.xml is DEAD CODE on this device. libvintf's
+     VintfObject::fetchVendorHalManifest() reads
+     /vendor/etc/vintf/manifest_${ro.boot.product.vendor.sku}.xml and returns,
+     falling back to manifest.xml only when the SKU is empty. It is not empty
+     here, and stock proves it by shipping no manifest.xml at all: only
+     manifest_cliffs.xml and manifest_pineapple.xml.
+
+     So the android.hardware.sensors entry previously added to manifest.xml never
+     took effect, and android.hardware.sensors-service.multihal kept aborting on
+     "Check failed: status == STATUS_OK (status=-3)". That -3 is
+     EX_ILLEGAL_ARGUMENT from addService() via meetsDeclarationRequirements():
+     a name beginning with "android.hardware." that is not VINTF-declared cannot
+     be registered.
+
+     Fragments under /vendor/etc/vintf/manifest/ are always merged, by
+     fetchVendorHalFragments(), regardless of SKU. The filename deliberately
+     differs from AOSP's android.hardware.sensors-multihal.xml, which cannot be
+     shipped as a blob (kati fails with "already defined by").
+
+     Version 3 matches the multihal blob's rewritten ELF. -->
+<manifest version="1.0" type="device">
+    <hal format="aidl">
+        <name>android.hardware.sensors</name>
+        <version>3</version>
+        <fqname>ISensors/default</fqname>
+    </hal>
+</manifest>

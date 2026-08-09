@@ -179,4 +179,32 @@ PRODUCT_PACKAGES += \
     vendor_firmware_mnt_mountpoint \
     vendor_fsg_mountpoint
 
+
+# VINTF fragments. These must NOT go in sm8635-common/manifest.xml: that file is
+# dead code here, because libvintf reads manifest_${ro.boot.product.vendor.sku}.xml
+# and returns without ever falling back (stock ships no manifest.xml at all).
+# Fragments under /vendor/etc/vintf/manifest/ are always merged.
+PRODUCT_PACKAGES += \
+    android.hardware.sensors-arcfox.xml
+
+
+# Bluetooth audio HAL. Without it com.android.bluetooth HARD-ABORTS on every
+# enable attempt, which is the flashing BT toggle:
+#   F bluetooth: LE Audio Client requires Bluetooth Audio HAL V2.1 at least.
+#                Either disable LE Audio Profile, or update your HAL
+#   E bluetooth: HalVersionManager: No supported HAL version
+#   BluetoothSystemServer: requested to [Disable]. Reason is CRASH
+# LE_AUDIO is enabled by default and the check is LOG_ALWAYS_FATAL. The vendor
+# only provides the QTI-specific HIDL vendor.qti.hardware.bluetooth_audio@2.1;
+# nothing declares the AOSP AIDL
+# android.hardware.bluetooth.audio.IBluetoothAudioProviderFactory/default.
+# This module is AOSP's own software implementation and brings its own vintf
+# fragment, so it is a plain device-tree omission rather than a blob problem.
+#
+# NOTE this does not turn Bluetooth on by itself: the stack also wants an AIDL
+# android.hardware.bluetooth.IBluetoothHci, while stock declares only the HIDL
+# @1.1 one. That still needs an AIDL BT HAL built over the QTI transport.
+PRODUCT_PACKAGES += \
+    android.hardware.bluetooth.audio-impl
+
 $(call inherit-product-if-exists, vendor/motorola/sm8635-common/sm8635-common-vendor.mk)

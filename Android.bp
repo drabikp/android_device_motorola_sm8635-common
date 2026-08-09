@@ -38,3 +38,22 @@ mkdir {
     dir: "fsg",
     vendor: true,
 }
+
+// Sensors VINTF fragment.
+//
+// It must be a fragment, not an entry in manifest.xml: libvintf reads
+// /vendor/etc/vintf/manifest_${ro.boot.product.vendor.sku}.xml and returns,
+// only falling back to manifest.xml when the SKU is empty. It is not empty here
+// (stock ships no manifest.xml at all, just manifest_cliffs/pineapple), so
+// everything in our manifest.xml is inert. Fragments are always merged.
+//
+// It also cannot go through PRODUCT_COPY_FILES: build/make/core/Makefile:148
+// rejects VINTF metadata there. A prebuilt_etc is the same shape extract_utils
+// generates for the vintf manifest blobs already shipped.
+prebuilt_etc {
+    name: "android.hardware.sensors-arcfox.xml",
+    src: "vintf/android.hardware.sensors-arcfox.xml",
+    sub_dir: "vintf/manifest",
+    vendor: true,
+}
+

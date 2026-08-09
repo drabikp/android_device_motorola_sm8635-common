@@ -2385,3 +2385,14 @@ vendor/lib64/vendor.qti.qspmhal-V1-ndk.so
 # Weaver is optional (secure-element-backed PIN throttling) and the rest of the
 # Thales SE stack was already dropped for AIDL-version conflicts, so the binary
 # and rc go too rather than leaving a HAL that can never run.
+
+# libsensorndkbridge.so -- TELEPHONY. qcrilNrd could not link:
+#   CANNOT LINK EXECUTABLE "/vendor/bin/hw/qcrilNrd": cannot locate symbol
+#   "ASensorManager_getCurInstance" referenced by "/vendor/lib64/libmdmcutback.so"
+# vendor.qcrild and vendor.qcrild2 restarted 84 times each in 410s. The symbol is
+# defined in stock's /vendor/lib64/libsensorndkbridge.so, which was never listed.
+# DISABLE_DEPS: it links sensors-V2 while the multihal blob is rewritten to V3,
+# and soong refuses "multiple versions of the same aidl_interface". The file still
+# installs, which is all qcrilNrd needs to resolve ASensorManager_getCurInstance.
+vendor/lib64/libsensorndkbridge.so;DISABLE_DEPS
+
