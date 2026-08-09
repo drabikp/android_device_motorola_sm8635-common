@@ -124,6 +124,48 @@ PRODUCT_PACKAGES += \
     android.hardware.security.keymint-V3-ndk.vendor
 
 
+# THE CURRENT BOOT BLOCKER. These two restore the dependencies of the
+# libsensorndkbridge BLOB, and without them the device does not boot.
+#
+# AOSP builds a source module of that exact name
+# (frameworks/hardware/interfaces/sensorservice/libsensorndkbridge, `proprietary:
+# true`, so it installs to /vendor/lib64). Its shared_libs are what installed
+# android.frameworks.sensorservice-V1-ndk.so into /vendor/lib64 -- verified in the
+# 2026-08-07 target-files snapshot, which carries VENDOR/lib64/{the NDK lib 101968 B,
+# libsensorndkbridge.so 85000 B = the AOSP build}.
+#
+# proprietary-files.txt then took the Motorola blob for the same name, because only
+# the blob exports ASensorManager_getCurInstance, which qcrilNrd needs. extract_utils
+# emits it with `prefer: true` (so it wins over the source module) and, because of
+# ;DISABLE_DEPS, with NO shared_libs at all. The source module's dependency edges
+# vanished with it, android.frameworks.sensorservice-V1-ndk.so stopped being
+# installed to /vendor, and the blob became unloadable:
+#
+#   dlopen failed: library "android.frameworks.sensorservice-V1-ndk.so" not found:
+#       needed by /vendor/lib64/libsensorndkbridge.so in namespace (default)
+#
+# Two things then die on it. libgnss.so DT_NEEDEDs libsensorndkbridge.so, so
+# liblocation_api's runtime dlopen of libgnss fails ("LocSvc_LocationAPI:
+# loadLibGnss: No gnss interface available"), LocationControlAPI::getInstance()
+# returns NULL and the GNSS HAL null-derefs it in its own constructor -- 254
+# SIGSEGVs. IGnss is declared in VINTF, so system_server's MAIN thread parks in an
+# untimed waitForDeclaredService inside LocationManagerService's phase 600 and
+# Watchdog kills it at 65s, forever. Same shape as the weaver bug. And qcrilNrd
+# fails the identical link 104 times, which is the telephony outage that adding
+# the blob was meant to fix in the first place.
+#
+# sensors-V2 is the blob's OTHER unmet DT_NEEDED (the AOSP module used V3, which is
+# already shipped for the multihal). V2 is a frozen, vendor_available version, and
+# several versions of one aidl_interface already coexist here as .vendor packages
+# (display.config V2/V5/V7/V11 below), so this is the same pattern, not a new risk.
+#
+# Shipping the libs rather than dropping the blob keeps GNSS and telephony both
+# fixed; dropping the blob would restore the boot but re-break telephony.
+PRODUCT_PACKAGES += \
+    android.frameworks.sensorservice-V1-ndk.vendor \
+    android.hardware.sensors-V2-ndk.vendor
+
+
 # QTI display AIDL interface libraries, vendor variants.
 #
 # These are not display features -- they are here because BOOT depends on one of
