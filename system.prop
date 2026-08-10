@@ -1,0 +1,19 @@
+# NFC NCI configuration.
+#
+# The ST HAL registers and drives the chip without this, so it is easy to miss --
+# but the FRAMEWORK side was reading the wrong vendor's config file. With
+# persist.nfc_cfg.config_file_name unset, nfc_config.cc falls back to
+# libnfc-nci.conf, and the copy we ship at /vendor/etc/libnfc-nci.conf is the NXP
+# one (it has NXP* keys and no ST keys), while the correct
+# /vendor/etc/libnfc-nci-st.conf ships and goes unused. Symptom would be NFC that
+# looks alive but gets RF/polling, eSE and UICC routing wrong.
+#
+# Stock sets this from system_ext/etc/init/init.st.nfc.rc, which we do not ship.
+# It has to live in system.prop rather than vendor.prop: persist.nfc_cfg. is typed
+# nfc_prop (plat_property_contexts:89) and vendor_init may not write it, whereas
+# properties from the system build.prop are set by init itself.
+#
+# Deliberately NOT setting persist.nfc_vendor_extn.lib_file_name, which stock also
+# sets here: it points at libnfc_vendor_extn_st.so, which this build does not ship.
+persist.nfc_cfg.config_file_name=libnfc-nci-st.conf
+ro.hw.nfc.vendor=st

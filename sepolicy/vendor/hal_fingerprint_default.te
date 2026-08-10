@@ -22,3 +22,15 @@ allow hal_fingerprint_default vendor_sysfs_devicetree_soc:dir search;
 allow hal_fingerprint_default vendor_sysfs_devicetree_soc:file r_file_perms;
 allow hal_fingerprint_default input_device:chr_file rw_file_perms;
 set_prop(hal_fingerprint_default, vendor_mot_fingerprint_status_prop)
+
+# Round two, from the denials the rules above uncovered. The grants above worked:
+# the HAL got past /dev/smcinvoke and stopped on these instead, so it is making
+# progress through its init rather than failing at one fixed point.
+#
+#   avc: denied { write } name="uinput" tcontext=u:object_r:uhid_device:s0 chr_file
+#   avc: denied { read }  name="u:object_r:build_bootimage_prop:s0" file
+#
+# The uhid one is the substantive one: the FPC HAL creates a virtual input device
+# for the sensor, which is also why its rc asks for the `uhid` group.
+allow hal_fingerprint_default uhid_device:chr_file rw_file_perms;
+get_prop(hal_fingerprint_default, build_bootimage_prop)
