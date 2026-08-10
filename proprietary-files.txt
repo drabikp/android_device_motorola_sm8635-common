@@ -859,7 +859,38 @@ vendor/bin/hw/capabilityconfigstoretest
 vendor/bin/hw/com.motorola.thermalstatus@service
 vendor/bin/hw/dolbycodec2
 vendor/bin/hw/ese_upgrade
-vendor/bin/hw/hostapd;DISABLE_CHECKELF
+# hostapd is DELIBERATELY NOT a blob any more -- built from source, exactly like
+# wpa_supplicant and for the identical reason: Motorola's binary imports sk_dup,
+# which our BoringSSL does not export, so it died at exec and IHostapd/default
+# was never registered.
+#
+# Two separate blockers, not one. Besides the dead binary, hostapd was never
+# VINTF-declared here either -- no fragment was extracted and the SKU manifests
+# do not mention IHostapd -- and HostapdHal refuses to use the AIDL path unless
+# ServiceManager.isDeclared() says so. Building from source fixes both, because
+# the cc_binary supplies its own vintf_fragment_modules.
+#
+# Enabled by BOARD_HOSTAPD_DRIVER in BoardConfigCommon.mk; the module installs to
+# this exact path, so re-listing the blob here would override the working binary
+# via prefer:true. Its rc (vendor/etc/init/hostapd.android.rc) went with it --
+# the source cc_binary carries init_rc unconditionally, and its own rc is the
+# same file minus the `-dd -g /data/vendor/wifi/hostapd/global` arguments, which
+# the AIDL HAL does not need.
+#
+# One other shipped file still execs this path: init.qcom.rc defines a
+# `hostapd_fst` service with those same -dd -g arguments. It is disabled/oneshot
+# and only fstman ever starts it, so it is inert here -- and the source binary
+# accepts those arguments anyway, so it is not a hazard, just not a secret.
+#
+# vendor/bin/hostapd_cli DOES stay a blob (see below), and note WHY it is safe,
+# because the obvious reason is the wrong one. Setting BOARD_HOSTAPD_DRIVER also
+# enables the SOURCE hostapd_cli module, which was disabled before and installs
+# to the same path. There is no duplicate installer only because extract_utils'
+# generated cc_prebuilt_binary carries prefer:true and wins -- verified, the
+# installed /vendor/bin/hostapd_cli is byte-identical to the blob. This is the
+# same "blob silently replaces source module" mechanism recorded elsewhere in
+# this tree; it is harmless here because the blob links only libcutils, liblog
+# and libc++ and imports no sk_* at all.
 vendor/bin/hw/motorola.hardware.fmradio@1.0-service
 vendor/bin/hw/motorola.hardware.health.storage@1.0-service
 vendor/bin/hw/motorola.hardware.input@1.1-service
@@ -891,7 +922,8 @@ vendor/etc/init/com.qualcomm.qti.wifidisplayhal@1.0-service.rc
 vendor/etc/init/dcfd.rc
 vendor/etc/init/dms-service.rc
 vendor/etc/init/fingerprint-fpc.rc
-vendor/etc/init/hostapd.android.rc
+# vendor/etc/init/hostapd.android.rc removed with the hostapd blob -- the
+# source-built binary ships its own copy of this rc.
 vendor/etc/init/init.maxe.rc
 vendor/etc/init/init.qccvendor.rc
 vendor/etc/init/init.qti.fm.rc

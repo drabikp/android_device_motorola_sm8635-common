@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    targetName MUST be WifiCustomization: that is the <overlayable> block name in
+    packages/modules/Wifi/service/ServiceWifiResources/res/values/overlayable.xml,
+    and every resource this overlay sets is declared inside it. An overlay that
+    names a resource outside the overlayable block is dropped at runtime.
+
+    isStatic keeps it permanently enabled, so no OverlayManager call is needed to
+    turn it on.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.android.wifi.resources.sm8635"
+    android:versionCode="1"
+    android:versionName="1.0">
+
+    <application android:hasCode="false" />
+
+    <overlay
+        android:targetPackage="com.android.wifi.resources"
+        android:targetName="WifiCustomization"
+        android:priority="0"
+        android:isStatic="true" />
+
+</manifest>

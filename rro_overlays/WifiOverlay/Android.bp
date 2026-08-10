@@ -1,0 +1,23 @@
+//
+// Runtime resource overlay for the Wi-Fi mainline module's resources.
+//
+// This is an RRO rather than a PRODUCT_PACKAGE_OVERLAYS entry in
+// device/motorola/arcfox/overlay-lineage, and the reason is durability, NOT
+// reachability. ServiceWifiResources is built from source in this tree, so a
+// static overlay would in fact apply -- but com.android.wifi is a mainline
+// module that can be updated out of band, and a compile-time overlay is baked
+// into the APK it overlays and lost the moment that module is replaced. An RRO
+// APK in /vendor/overlay is a separate artefact on the vendor partition and
+// survives. This is also the shape AOSP itself uses; cf.
+// device/google/cuttlefish/shared/phone/overlays/CuttlefishWifiOverlay.
+//
+package {
+    default_applicable_licenses: ["Android-Apache-2.0"],
+}
+
+runtime_resource_overlay {
+    name: "SM8635WifiOverlay",
+    resource_dirs: ["res"],
+    vendor: true,
+    sdk_version: "current",
+}

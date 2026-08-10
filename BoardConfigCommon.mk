@@ -409,10 +409,15 @@ TARGET_VENDOR_PROP += $(COMMON_PATH)/vendor.prop
 # --- Wi-Fi --------------------------------------------------------------------
 # Build wpa_supplicant FROM SOURCE. Motorola's blob cannot run on this build at
 # all -- it is linked against their own /vendor/lib64/libcrypto.so, an older
-# BoringSSL that still exports the bare sk_dup/sk_num/sk_value stack API. Our
-# BoringSSL exports only the OPENSSL_sk_* names, so the blob dies at exec:
+# BoringSSL. Ours is close but not identical: of the eight bare-stack sk_* names
+# the blob imports, our libcrypto exports seven and is missing exactly one,
+# sk_dup, which upstream retired in favour of OPENSSL_sk_dup. One missing symbol
+# is enough -- the loader resolves all or nothing:
 #   CANNOT LINK EXECUTABLE "/vendor/bin/hw/wpa_supplicant":
 #   cannot locate symbol "sk_dup"
+# (The supplicant also imports EVP_PKEY_from_keystore, likewise unexported here.
+# Do not read the old "exports only the OPENSSL_sk_* names" claim that used to
+# sit in this comment -- it was measured properly on 2026-08-10 and is false.)
 # The only way to satisfy it would be to ship Motorola's libcrypto.so as
 # /vendor/lib64/libcrypto.so, which -- via extract_utils' prefer:true -- would
 # swap the C crypto library out from under EVERY vendor process. Not acceptable
@@ -460,6 +465,56 @@ BOARD_WPA_SUPPLICANT_DRIVER                   := NL80211
 BOARD_WPA_SUPPLICANT_PRIVATE_LIB              := lib_driver_cmd_qcwcn
 WIFI_HIDL_UNIFIED_SUPPLICANT_SERVICE_RC_ENTRY := true
 WPA_SUPPLICANT_VERSION                        := VER_0_8_X
+
+# hostapd, same story and the same fix. The blob at /vendor/bin/hw/hostapd
+# imports sk_dup too, so it could never have exec'd on this build either -- which
+# is why IHostapd/default has never been registered and SoftAP/Wi-Fi tethering
+# has never worked.
+#
+# TWO independent blockers, each on its own sufficient, and it is worth knowing
+# both because fixing only one would have looked like progress and changed
+# nothing:
+#   1. the binary was dead on arrival, exactly like the supplicant, and for the
+#      identical reason (sk_dup);
+#   2. android.hardware.wifi.hostapd was never VINTF-declared AT ALL. No
+#      hostapd fragment was ever extracted, and neither manifest_cliffs.xml nor
+#      manifest_pineapple.xml -- the SKU manifests libvintf actually reads --
+#      mentions IHostapd. HostapdHal gates the whole AIDL path on
+#      HostapdHalAidlImp.serviceDeclared(), i.e. ServiceManager.isDeclared(),
+#      which reads the VINTF manifest; the `interface aidl ...` line in the init
+#      rc does NOT satisfy it. So even a perfectly linkable blob was unreachable.
+# Building from source fixes both at once, because the cc_binary brings its own
+# vintf_fragment_modules (see below).
+#
+# BOARD_HOSTAPD_DRIVER is the ON SWITCH, not just a driver selector. Setting it
+# is what makes board_config_wpa_supplicant.mk set soong's wpa_build_hostapd,
+# and hostapd_cflags_default carries `enabled: select(... wpa_build_hostapd ...)`
+# defaulting to FALSE. Without this line the hostapd modules are disabled and
+# adding `hostapd` to PRODUCT_PACKAGES fails to find a module rather than
+# silently building nothing. NL80211 is the only accepted value (anything else
+# is a hard $(error) in that file).
+#
+# Unlike the supplicant, hostapd needs no rc/VINTF coaxing: its cc_binary carries
+# init_rc unconditionally and declares its own vintf_fragment_modules, so
+# IHostapd/default is declared at version 3 automatically. That is a REAL version
+# change from the blob, which was built against hostapd-V1-ndk -- and it is the
+# right direction: source-built means implementation and NDK backend are the same
+# version by construction, so the V1-vs-V4 relink trap that crashed the Wi-Fi HAL
+# cannot happen here.
+#
+# V3 against a target-level 8 device is fine, but the reason is not obvious:
+# compatibility_matrix.8.xml asks for hostapd <version>1</version>, and libvintf
+# matches with minorAtLeast() against a fake AIDL major, so 3 satisfies 1. Do not
+# "fix" the fragment down to 1 -- and do re-run check_vintf after touching it.
+#
+# 11AX and 11BE are enabled to match stock: Motorola's own hostapd blob contains
+# both the ieee80211ax and the ieee80211be config strings. Without 11AX the
+# SoftAP tops out at 11n on 2.4 GHz (measured: wifiStandard=4) and at 11ac on
+# 5/6 GHz -- 11ac does not exist on 2.4 GHz at all.
+BOARD_HOSTAPD_DRIVER                          := NL80211
+BOARD_HOSTAPD_PRIVATE_LIB                     := lib_driver_cmd_qcwcn
+WIFI_FEATURE_HOSTAPD_11AX                     := true
+WIFI_FEATURE_HOSTAPD_11BE                     := true
 
 # --- Blobs ------------------------------------------------------------------
 -include vendor/motorola/sm8635-common/BoardConfigVendor.mk

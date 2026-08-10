@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Wi-Fi capability resources for sm8635 (arcfox / razr 50 ultra).
+
+    Every value below is set from something the radio or the driver said, not
+    from the marketing spec sheet. The evidence, captured on the running device
+    with `iw phy` and from the driver ini, is quoted per entry.
+
+    Why this file exists at all: AOSP defaults config_wifi5ghzSupport and
+    config_wifi6ghzSupport to FALSE, so a device that ships no Wi-Fi RRO claims
+    to be a 2.4 GHz-only radio. Nothing about STA mode notices — this device was
+    happily associated at 5260 MHz with these still false, because association
+    goes through the driver's own regulatory data. SoftAP is where it bites:
+    ApConfigUtil.isSoftApBandSupported() consults ONLY these resources, so
+    `cmd wifi start-softap ... -b 5` failed with
+
+        E ApConfigUtil: Can not start softAp with band 5Ghz not supported.
+
+    while the identical command with -b 2 brought up a working AP. Do not read
+    that error as a driver, hostapd or regulatory problem — it is decided in the
+    framework before hostapd is ever asked to do anything, and it is NOT the
+    missing country code (forcing one with `cmd wifi force-country-code enabled`
+    does not change it).
+-->
+<resources>
+    <!--
+        `iw phy` reports three bands:
+            Band 1  2412-2484 MHz
+            Band 2  5180-5900 MHz   <- STA is associated here at 5260 MHz
+            Band 4  5955-7115 MHz   <- 6 GHz, up to channel 233
+        and the driver ini has oem_6g_support_disable=0.
+    -->
+    <bool name="config_wifi5ghzSupport">true</bool>
+    <bool name="config_wifi6ghzSupport">true</bool>
+
+    <!--
+        config_wifiSoftap24ghzSupported and config_wifiSoftap5ghzSupported are
+        already true in AOSP defaults, so only 6 GHz needs turning on here.
+    -->
+    <bool name="config_wifiSoftap6ghzSupported">true</bool>
+
+    <!--
+        All three bands advertise BOTH "HE Iftypes: AP" and "EHT Iftypes: AP" in
+        `iw phy`, so the radio can beacon 802.11ax and 802.11be. Confirmed from
+        the other side too: hostapd's own driver capability read logs
+        he_supported=1, eht_supported=1.
+
+        Without these the AP negotiates down to 11n even when the framework's
+        SoftApConfiguration asks for ax — observed directly, hostapd logging
+        `getGeneration ... he_supported=1, eht_supported=1, ieee80211ax = 0,
+        ieee80211be=0` and settling on wifiStandard=4 (11n) on 2.4 GHz.
+
+        Expect 11be on a SINGLE AP only. config_wifiSoftapIeee80211beSupported is
+        merely the FIRST gate in SoftApManager.is11beAllowedForThisConfiguration();
+        the log line "11BE is not allowed, removing from configuration" can still
+        fire afterwards, and in bridged mode always will, because
+        config_wifiSoftApMaxNumberMLDSupported defaults to 0 and
+        config_wifiSoftApSingleLinkMloInBridgedModeSupported to false. Measured
+        single-AP 6 GHz reached wifiStandard=8, so the gate is doing real work
+        here and is not dead weight.
+    -->
+    <bool name="config_wifiSoftapIeee80211axSupported">true</bool>
+    <bool name="config_wifiSoftapIeee80211beSupported">true</bool>
+
+    <!--
+        11ac, for the same reason as 11ax above: hostapd reports vht_enabled=1 on
+        5 GHz. AOSP defaults this to false too.
+    -->
+    <bool name="config_wifi_softap_ieee80211ac_supported">true</bool>
+
+    <!--
+        SAE is a property of the hostapd BINARY, not of the radio, and this build
+        compiles it in (hostapd_cflags_default carries -DCONFIG_SAE). It has to be
+        declared here or a 6 GHz AP is impossible: the WFA rules coded into
+        ApConfigUtil.isSecurityTypeRestrictedFor6gBand forbid OPEN and
+        WPA2-Personal on 6 GHz, so SAE is the only usable option there, and asking
+        for it without this failed with "Error, SAE requires HAL support".
+    -->
+    <bool name="config_wifi_softap_sae_supported">true</bool>
+
+    <!--
+        ACS IS DELIBERATELY LEFT FALSE. This is a measured trade-off, not an
+        oversight, and it is the opposite of what the hostapd build flags suggest
+        (-DCONFIG_ACS is compiled in and the offload works on 2.4 and 5 GHz).
+
+        Declaring ACS makes the framework pass channel 0 and let hostapd offload
+        the channel survey to the driver. On 6 GHz this driver rejects the QCA ACS
+        vendor attributes outright:
+
+            hostapd: ACS: Offloading to driver
+            hostapd: wlan2: nl80211: kernel reports: Unknown attribute type
+            hostapd: Configured channel (0) or frequency (0) not found from the
+                     channel list of the current mode (2) IEEE 802.11a
+            hostapd: Could not select hw_mode and channel. (-3)
+
+        hostapd then falls back to the 5 GHz hwmode with no channel at all and the
+        AP never starts. Leaving ACS undeclared takes the other branch of
+        ApConfigUtil.updateApChannelConfig, where the FRAMEWORK picks a concrete
+        channel via chooseApChannel() before hostapd is called, and the driver is
+        never asked to run ACS.
+
+        Measured, same build, only this value changed, STA off and a country code
+        set (all three verified as "Soft AP is started"):
+
+            ACS declared      2.4 GHz ok (2462)   5 GHz ok (5745)   6 GHz FAILS
+            ACS undeclared    2.4 GHz ok (2427)   5 GHz ok (5805)   6 GHz ok (6055)
+
+        The 6 GHz AP comes up at wifiStandard=8, i.e. 802.11be. The benefit is the
+        entire 6 GHz band. The costs, stated in full so the trade can be re-judged
+        later:
+          * the channel is picked by chooseApChannel() from wificond's list, at
+            random, per start — no interference survey;
+          * setAllowedAcsChannels is wiped for all three bands
+            (ApConfigUtil.java:1043);
+          * BRIDGED / dual-band SoftAP becomes impossible outright —
+            ApConfigUtil.java:1546 rejects a dual-AP config whose channels are
+            unspecified when ACS offload is absent. That costs nothing TODAY only
+            because config_wifiBridgedSoftApSupported defaults to false and this
+            overlay does not set it. Anyone turning bridged mode on must revisit
+            this line first.
+        If the ACS offload is ever fixed on the driver side, flip this to true and
+        re-run the 6 GHz case before believing it.
+    -->
+    <bool name="config_wifi_softap_acs_supported">false</bool>
+</resources>

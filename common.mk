@@ -305,6 +305,49 @@ PRODUCT_PACKAGES += \
     wpa_supplicant \
     wpa_supplicant.conf
 
+# hostapd, also from source, for SoftAP / Wi-Fi tethering. The Motorola blob was
+# shipped all along but could never exec (sk_dup again), so IHostapd/default has
+# never registered and every tethering attempt failed at
+# numSetupSoftApInterfaceFailureDueToHostapd.
+#
+# Only the binary is listed. Unlike the supplicant, hostapd needs no companion
+# entries: its cc_binary declares init_rc and vintf_fragment_modules directly, so
+# the rc and the IHostapd/default declaration come with it, and there is no
+# hostapd.conf -- the AIDL HAL is handed the AP parameters by the framework and
+# writes the config itself into /data/vendor/wifi/hostapd.
+#
+# The module only exists if BOARD_HOSTAPD_DRIVER is set; see BoardConfigCommon.mk.
+PRODUCT_PACKAGES += \
+    hostapd
+
+# Wi-Fi capability RRO. Without it the framework believes this is a 2.4 GHz-only
+# radio, because AOSP defaults config_wifi5ghzSupport and config_wifi6ghzSupport
+# to false and this tree shipped no Wi-Fi overlay at all. STA mode never noticed
+# -- the device associates on 5 GHz regardless -- but SoftAP consults only those
+# resources and refused any band but 2.4. Evidence per resource is in the overlay's
+# own config.xml, and the reason it is an RRO rather than a static overlay is in
+# its Android.bp.
+#
+# KNOWN LIMITATION, and it is not this overlay's fault: 5 GHz and 6 GHz SoftAP
+# additionally require a Wi-Fi country code, which THIS ROM CANNOT OBTAIN TODAY
+# because the modem does not come up, so WifiCountryCode gets an empty string
+# from telephony. 5 GHz is an explicit refusal in
+# ApConfigUtil.updateApChannelConfig ("5GHz band is not allowed without country
+# code"); 6 GHz fails indirectly, because the driver reports no usable channels
+# for the band. Until telephony works, the hotspot is 2.4 GHz-only. All three
+# bands were proven to work by forcing a code with `cmd wifi force-country-code
+# enabled <CC>` -- which is an in-memory override that does NOT survive a reboot.
+#
+# DELIBERATELY NOT hardcoding a default country code here. It is a regulatory
+# decision rather than a technical one, one image is used across regions, and
+# 6 GHz is exactly the band where regions diverge most, so a wrong value does
+# the most damage precisely where this overlay adds capability. If a default is
+# ever wanted it should be an explicit, documented opt-in via
+# androidboot.wificountrycode=XX on BOARD_KERNEL_CMDLINE, which WifiCountryCode
+# reads as ro.boot.wificountrycode and which telephony still overrides.
+PRODUCT_PACKAGES += \
+    SM8635WifiOverlay
+
 
 # NFC. Everything already ships -- the ST HAL, nfc_nci.st21nfc.st.so, both
 # firmware blobs, all libnfc-hal-st*.conf, the SELinux labels -- and
