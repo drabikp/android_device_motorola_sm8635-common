@@ -1,0 +1,33 @@
+// The two RFS symlinks upstream does not provide.
+//
+// hardware/qcom-caf/common/Android.bp already defines 84 install_symlink modules
+// for the modem's /vendor/rfs namespace (rfs_*_symlink), and
+// hardware/qcom-caf/common/common.mk lists them in PRODUCT_PACKAGES. THIS DEVICE
+// SIMPLY NEVER PULLED THEM IN -- see common.mk here for the package list and for
+// why we take the names rather than inherit that file wholesale.
+//
+// Do not re-add the other 72: they collide with upstream on installed_location,
+// and because Soong emits install rules for every module in the graph regardless
+// of PRODUCT_PACKAGES, kati fails outright:
+//
+//   out/soong/installs-lineage_arcfox.mk: error: overriding commands for target
+//   `out/target/product/arcfox/vendor/rfs/apq/gnss/hlos'
+//
+// Upstream's targets were diffed against the stock dump: 0 mismatches on all 72.
+// These two are the only ones missing, and they are the pair that matters for
+// telephony -- readonly/vendor/fsg is how the modem reaches the carrier FSG.
+// readonly/fsg is dangling on stock too (there is no /fsg on either build); it
+// ships for parity because the modem probes both.
+install_symlink {
+    name: "rfs_msm_mpss_readonly_fsg",
+    vendor: true,
+    installed_location: "rfs/msm/mpss/readonly/fsg",
+    symlink_target: "/fsg",
+}
+
+install_symlink {
+    name: "rfs_msm_mpss_readonly_vendor_fsg",
+    vendor: true,
+    installed_location: "rfs/msm/mpss/readonly/vendor/fsg",
+    symlink_target: "/vendor/fsg",
+}

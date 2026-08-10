@@ -96,3 +96,21 @@ prebuilt_etc {
     vendor: true,
 }
 
+
+// Face unlock VINTF declaration, replacing the hand-edited blob. See the file
+// for why version 3 and not the 4 the vendor tree had been carrying.
+prebuilt_etc {
+    name: "android.hardware.biometrics.face-arcfox.xml",
+    src: "vintf/android.hardware.biometrics.face-arcfox.xml",
+    sub_dir: "vintf/manifest",
+    vendor: true,
+}
+
+// The android.hardware.biometrics.face system feature. Ships in the same change
+// as the exec label, never before it -- see the VINTF file.
+prebuilt_etc {
+    name: "android.hardware.biometrics.face.xml",
+    src: "permissions/android.hardware.biometrics.face.xml",
+    sub_dir: "permissions",
+    vendor: true,
+}

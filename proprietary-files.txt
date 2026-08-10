@@ -964,7 +964,10 @@ vendor/etc/vintf/manifest/datafactoryservice-saidl.xml
 vendor/etc/vintf/manifest/deviceinfo-saidl.xml
 vendor/etc/vintf/manifest/dms-service.xml
 vendor/etc/vintf/manifest/dpm-saidl.xml
-vendor/etc/vintf/manifest/face-default_3.xml
+# vendor/etc/vintf/manifest/face-default_3.xml -- DROPPED. Replaced by our own
+# vintf/android.hardware.biometrics.face-arcfox.xml: the blob here had been
+# hand-edited to version 4 while the binary implements V3, and the vendor tree is
+# not version controlled so the edit was untracked. See that file.
 vendor/etc/vintf/manifest/imsdcservice-saidl.xml
 vendor/etc/vintf/manifest/ImsRtpService-aidl.xml
 vendor/etc/vintf/manifest/manifest_identity_credential.xml

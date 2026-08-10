@@ -379,3 +379,128 @@ PRODUCT_PACKAGES += \
     android.hardware.bluetooth.audio-impl
 
 $(call inherit-product-if-exists, vendor/motorola/sm8635-common/sm8635-common-vendor.mk)
+
+# FACE UNLOCK. Everything needed was already on the device except the exec label:
+# both stock binaries, stock's init rc and the libFace3D set are extracted, the V3
+# NDK interface libraries are source-built, and the binary's full 79-library
+# closure resolves with nothing missing. (The libFace3D*.so are the LEGACY HIDL
+# HAL's, not this one's -- neither binary imports dlopen.) init was
+# simply refusing to start the HAL because the binary is labelled vendor_file --
+# proven live with `start biometrics-face-hal`, which returns the same
+# "no domain transition from u:r:init:s0" error as the Motorola service family.
+#
+# The label lives in sepolicy/vendor/file_contexts; these two files are the other
+# half and must not ship without it. See vintf/android.hardware.biometrics.face-arcfox.xml
+# for why the declaration is version 3, and why declaring it early is harmful.
+PRODUCT_PACKAGES += \
+    android.hardware.biometrics.face-arcfox.xml \
+    android.hardware.biometrics.face.xml
+
+# THE MODEM'S REMOTE FILE SYSTEM NAMESPACE -- the telephony root cause.
+#
+# /vendor/bin/tftp_server serves files to the modem, ADSP, CDSP and SLPI over QMI,
+# and its ten server roots are COMPILED IN, pointing at /vendor/rfs/{msm,mdm,apq}/*.
+# The modem asks for paths relative to those roots. Stock resolves them with a farm
+# of symlinks redirecting readwrite -> the persist partition, readonly -> the
+# firmware mounts, ramdumps -> tombstones.
+#
+# /vendor/rfs DID NOT EXIST ON THIS PORT AT ALL, so the modem could not read
+# /readwrite/cal_rfs/rf000296*.bin -- 180 KiB of per-unit RF calibration written at
+# the factory on 2024-06-06 (430,650 B for all seven rf*.bin in that directory).
+# The modem reports init failure with reason "no calibration" and qcril turns that
+# into RADIO_POWER error 71 / NO_RF_CALIBRATION_INFO.
+#
+# The modules were in the tree all along: hardware/qcom-caf/common/Android.bp has
+# all 84 of them. This device tree just never listed them. We take the names rather
+# than $(call inherit-product, hardware/qcom-caf/common/common.mk) because that file
+# also adds PRODUCT_VENDOR_LINKER_CONFIG_FRAGMENTS, and the linker namespace layout
+# on this port is load-bearing for the vendor blobs.
+#
+# The two /vendor/rfs/msm/mpss/readonly/*fsg links upstream lacks are in rfs/Android.bp.
+PRODUCT_PACKAGES += \
+    rfs_apq_gnss_hlos_symlink \
+    rfs_apq_gnss_ramdumps_symlink \
+    rfs_apq_gnss_readonly_firmware_symlink \
+    rfs_apq_gnss_readonly_vendor_firmware_symlink \
+    rfs_apq_gnss_readwrite_symlink \
+    rfs_apq_gnss_shared_symlink \
+    rfs_mdm_adsp_hlos_symlink \
+    rfs_mdm_adsp_ramdumps_symlink \
+    rfs_mdm_adsp_readonly_firmware_symlink \
+    rfs_mdm_adsp_readonly_vendor_firmware_symlink \
+    rfs_mdm_adsp_readwrite_symlink \
+    rfs_mdm_adsp_shared_symlink \
+    rfs_mdm_cdsp_hlos_symlink \
+    rfs_mdm_cdsp_ramdumps_symlink \
+    rfs_mdm_cdsp_readonly_firmware_symlink \
+    rfs_mdm_cdsp_readonly_vendor_firmware_symlink \
+    rfs_mdm_cdsp_readwrite_symlink \
+    rfs_mdm_cdsp_shared_symlink \
+    rfs_mdm_mpss_hlos_symlink \
+    rfs_mdm_mpss_ramdumps_symlink \
+    rfs_mdm_mpss_readonly_firmware_symlink \
+    rfs_mdm_mpss_readonly_vendor_firmware_symlink \
+    rfs_mdm_mpss_readwrite_symlink \
+    rfs_mdm_mpss_shared_symlink \
+    rfs_mdm_ois_hlos_symlink \
+    rfs_mdm_ois_ramdumps_symlink \
+    rfs_mdm_ois_readonly_firmware_symlink \
+    rfs_mdm_ois_readonly_vendor_firmware_symlink \
+    rfs_mdm_ois_readwrite_symlink \
+    rfs_mdm_ois_shared_symlink \
+    rfs_mdm_slpi_hlos_symlink \
+    rfs_mdm_slpi_ramdumps_symlink \
+    rfs_mdm_slpi_readonly_firmware_symlink \
+    rfs_mdm_slpi_readonly_vendor_firmware_symlink \
+    rfs_mdm_slpi_readwrite_symlink \
+    rfs_mdm_slpi_shared_symlink \
+    rfs_mdm_tn_hlos_symlink \
+    rfs_mdm_tn_ramdumps_symlink \
+    rfs_mdm_tn_readonly_firmware_symlink \
+    rfs_mdm_tn_readonly_vendor_firmware_symlink \
+    rfs_mdm_tn_readwrite_symlink \
+    rfs_mdm_tn_shared_symlink \
+    rfs_mdm_wpss_hlos_symlink \
+    rfs_mdm_wpss_ramdumps_symlink \
+    rfs_mdm_wpss_readonly_firmware_symlink \
+    rfs_mdm_wpss_readonly_vendor_firmware_symlink \
+    rfs_mdm_wpss_readwrite_symlink \
+    rfs_mdm_wpss_shared_symlink \
+    rfs_msm_adsp_hlos_symlink \
+    rfs_msm_adsp_ramdumps_symlink \
+    rfs_msm_adsp_readonly_firmware_symlink \
+    rfs_msm_adsp_readonly_vendor_firmware_symlink \
+    rfs_msm_adsp_readwrite_symlink \
+    rfs_msm_adsp_shared_symlink \
+    rfs_msm_cdsp_hlos_symlink \
+    rfs_msm_cdsp_ramdumps_symlink \
+    rfs_msm_cdsp_readonly_firmware_symlink \
+    rfs_msm_cdsp_readonly_vendor_firmware_symlink \
+    rfs_msm_cdsp_readwrite_symlink \
+    rfs_msm_cdsp_shared_symlink \
+    rfs_msm_mpss_hlos_symlink \
+    rfs_msm_mpss_ramdumps_symlink \
+    rfs_msm_mpss_readonly_firmware_symlink \
+    rfs_msm_mpss_readonly_vendor_firmware_symlink \
+    rfs_msm_mpss_readwrite_symlink \
+    rfs_msm_mpss_shared_symlink \
+    rfs_msm_ois_hlos_symlink \
+    rfs_msm_ois_ramdumps_symlink \
+    rfs_msm_ois_readonly_firmware_symlink \
+    rfs_msm_ois_readonly_vendor_firmware_symlink \
+    rfs_msm_ois_readwrite_symlink \
+    rfs_msm_ois_shared_symlink \
+    rfs_msm_slpi_hlos_symlink \
+    rfs_msm_slpi_ramdumps_symlink \
+    rfs_msm_slpi_readonly_firmware_symlink \
+    rfs_msm_slpi_readonly_vendor_firmware_symlink \
+    rfs_msm_slpi_readwrite_symlink \
+    rfs_msm_slpi_shared_symlink \
+    rfs_msm_wpss_hlos_symlink \
+    rfs_msm_wpss_ramdumps_symlink \
+    rfs_msm_wpss_readonly_firmware_symlink \
+    rfs_msm_wpss_readonly_vendor_firmware_symlink \
+    rfs_msm_wpss_readwrite_symlink \
+    rfs_msm_wpss_shared_symlink \
+    rfs_msm_mpss_readonly_fsg \
+    rfs_msm_mpss_readonly_vendor_fsg

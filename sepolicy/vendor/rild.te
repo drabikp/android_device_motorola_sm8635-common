@@ -11,3 +11,25 @@
 #   (allow rild vendor_thermal_socket (sock_file (write)))
 # at vendor_sepolicy.cil:14327 in the W1UXS36H dump.
 allow rild vendor_thermal_socket:sock_file write;
+
+# rild talks to thermal-engine over /dev/socket/thermal-send-client. The existing
+# rule above grants write on the sock_file, which is necessary but NOT sufficient:
+# connecting to a unix stream socket also needs `connectto` on the SERVER'S DOMAIN,
+# not just the socket node. Without it the connect fails and rild retries forever:
+#
+#   avc: denied { connectto } for comm="te-client-regcb"
+#        path="/dev/socket/thermal-send-client" scontext=u:r:rild:s0
+#        tcontext=u:r:vendor_thermal-engine:s0 tclass=unix_stream_socket
+#
+# measured at 8043 occurrences over 68 minutes and still climbing at ~2/s -- it is
+# unbounded, not a fixed per-boot count, and accounts for 86% of every denial on
+# the device, 9.7x the runner-up. Stock carries the identical rule.
+allow rild vendor_thermal-engine:unix_stream_socket connectto;
+
+# rmt_storage is denied its own FSG partition RIGHT NOW, live:
+#   avc: denied { read write } comm="rmt_storage" name="sdd18"
+#        tcontext=u:object_r:vendor_modem_block_device:s0 tclass=blk_file
+# sdd18 is fsg_a. QCOM's rmt_storage.te:53 grants only vendor_ssd_block_device and
+# vendor_modem_efs_partition_device; the vendor_modem_block_device half is
+# Motorola's, and stock has it. Without this the FSG work upstream of it is moot.
+allow vendor_rmt_storage vendor_modem_block_device:blk_file rw_file_perms;

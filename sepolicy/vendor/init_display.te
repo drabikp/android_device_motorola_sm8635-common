@@ -1,0 +1,35 @@
+# init_display -- /vendor/bin/init.mmi.display.sh, started as
+# `vendor.mmi-display-sh` (init.mmi.rc:577, class core, user root, oneshot).
+#
+# The smallest of the fifteen. Its whole job is to poll for
+# /sys/class/drm/card0-DP-1 for five seconds and, if it appears, set
+# ro.vendor.hw.displayport=true. That property is how the rest of the stack
+# learns the unit has a DisplayPort-capable USB-C alt mode.
+
+type init_display, domain;
+type init_display_exec, exec_type, vendor_file_type, file_type;
+
+init_daemon_domain(init_display)
+
+allow init_display vendor_shell_exec:file rx_file_perms;
+allow init_display vendor_toolbox_exec:file rx_file_perms;
+allow init_display vendor_file:file execute_no_trans;
+
+# notice() to /dev/kmsg.
+allow init_display kmsg_device:chr_file rw_file_perms;
+
+# ro.vendor.hw.displayport -> vendor_mot_hw_prop (see property_contexts).
+set_prop(init_display, vendor_mot_hw_prop)
+
+# BEYOND STOCK PARITY, and needed: `[ -e /sys/class/drm/card0-DP-1 ]` is a stat
+# through /sys/class/drm, and stock's init_display has no sysfs rule at all --
+# so on stock this test can only ever have returned false, and the property can
+# only ever have been left unset. Since the point of porting the domain is to
+# make the check work, the path walk is granted. /sys/class/drm and its entries
+# are u:object_r:sysfs:s0 on this device.
+allow init_display sysfs:dir r_dir_perms;
+allow init_display sysfs:lnk_file r_file_perms;
+allow init_display sysfs:file getattr;
+
+# NOT PORTED: set on vendor_mot_init_prop. Stock's init_display carries it, but
+# this script sets exactly one property and it is a ro.vendor.hw.* one.

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+     Declares the face-unlock system feature, without which the framework never
+     offers face enrolment even once IFace/default is being served.
+
+     Stock declares it in product/etc/permissions/com.motorola.faceunlock.xml,
+     alongside a second feature "com.motorola.faceunlock" that exists only for
+     Motorola's own MotoFaceUnlock priv-app. We do not ship that app, so only the
+     AOSP feature is declared here. Claiming com.motorola.faceunlock with no app
+     behind it would advertise something that is not there.
+-->
+<permissions>
+    <feature name="android.hardware.biometrics.face" />
+</permissions>

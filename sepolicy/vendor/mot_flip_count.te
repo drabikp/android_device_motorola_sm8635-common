@@ -1,0 +1,38 @@
+# mot_flip_count -- /vendor/bin/mot_flip_count, started as
+# `vendor.mot_flip_count` (init.mmi.overlay.rc:176, class core, user system,
+# group system/input, disabled + triggered at :212).
+#
+# `strings /vendor/bin/mot_flip_count` is unusually clear about its entire job:
+#
+#   /dev/input
+#   /mnt/vendor/persist/sensors/mot_flip_count
+#   persist.vendor.sensors.mot_flip_count
+#
+# It counts hinge open/close events off the input subsystem and keeps a running
+# total in persist, mirrored into a property. On a foldable that number is what
+# the hinge-wear diagnostics read.
+
+type mot_flip_count, domain;
+type mot_flip_count_exec, exec_type, vendor_file_type, file_type;
+
+init_daemon_domain(mot_flip_count)
+
+# /dev/input/event* -- the hinge switch.
+allow mot_flip_count input_device:dir r_dir_perms;
+allow mot_flip_count input_device:chr_file r_file_perms;
+
+# /mnt/vendor/persist/sensors. vendor_persist_sensors_file is QCOM's type and is
+# already applied there -- confirmed live: /mnt/vendor/persist/sensors is
+# u:object_r:vendor_persist_sensors_file:s0 while the rest of the persist tree
+# is mnt_vendor_file. Nothing new is needed to label it.
+allow mot_flip_count vendor_persist_sensors_file:dir rw_dir_perms;
+allow mot_flip_count vendor_persist_sensors_file:file create_file_perms;
+
+# persist.vendor.sensors.mot_flip_count -> vendor_sensors_prop, QCOM's type, and
+# the persist.vendor.sensors. prefix is already in
+# sepolicy_vndr/sm8650/generic/vendor/common/property_contexts. No new property
+# type, and therefore none of the read-back problem described in property.te.
+set_prop(mot_flip_count, vendor_sensors_prop)
+
+# See qclicense_copy.te: leaf type granted, parent traversal was not.
+allow mot_flip_count mnt_vendor_file:dir search;

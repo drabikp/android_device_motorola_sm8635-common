@@ -1,0 +1,71 @@
+# hardware_rev -- /vendor/bin/hardware_revisions.sh, started as
+# `vendor.hw_revs` (init.mmi.rc:560, class late_start, user/group system,
+# oneshot).
+#
+# Writes one small MOTHREV-v2 text file per component into
+# /data/vendor/hardware_revisions -- ram, nvm, ap, pmic, display, touch -- by
+# scraping /sys/ram, /sys/storage, /proc/cpuinfo, /sys/hardware_revisions/pmic,
+# /sys/class/drm/card0-DSI-{1,2} and /sys/class/touchscreen. It is a diagnostic
+# aid (bug reports correlate against these), not a boot dependency, but it is
+# one of the fifteen init refused to start.
+#
+# Note /sys/ram and /sys/storage DO exist on arcfox (checked over adb);
+# /sys/hardware_revisions does not, so the pmic file gets the empty
+# create_common_revision_data form.
+
+type hardware_rev, domain;
+type hardware_rev_exec, exec_type, vendor_file_type, file_type;
+
+init_daemon_domain(hardware_rev)
+
+# export PATH=/vendor/bin:$PATH, so cat/sed/ls/mkdir/chown/chmod/getprop are
+# vendor toolbox applets.
+allow hardware_rev vendor_shell_exec:file rx_file_perms;
+allow hardware_rev vendor_toolbox_exec:file rx_file_perms;
+allow hardware_rev vendor_file:file execute_no_trans;
+
+# notice() to /dev/kmsg -- only used by the display branch, but it is the same
+# notice() the rest of these scripts use.
+allow hardware_rev kmsg_device:chr_file rw_file_perms;
+
+# /data/vendor/hardware_revisions. The script `rm`s the whole directory and
+# recreates every file each run, hence create/unlink/rename on top of write.
+# hwrev_data_file is declared in file.te and labelled in file_contexts; today
+# that directory is plain vendor_data_file on the device and will pick up the
+# new label from the /data restorecon that follows a policy change.
+allow hardware_rev hwrev_data_file:dir create_dir_perms;
+allow hardware_rev hwrev_data_file:file create_file_perms;
+
+# Everything it scrapes lives in sysfs.
+#
+# NOT DECLARED: stock's sysfs_touchclass and sysfs_panel_vendor_info.
+#   - sysfs_touchclass: see the long argument in init_touch.te. Both
+#     /sys/class/touchscreen and /sys/devices/virtual/touchscreen are plain
+#     sysfs here and hal_sensors_default reads them as such.
+#   - sysfs_panel_vendor_info: stock labels exactly one file with it,
+#     /sys/class/drm/version, and it does so through file_contexts rather than
+#     genfscon. ueventd only restorecons the /sys/devices/... path a uevent
+#     names (FixupSysPermissions), and /sys/class/drm/version is not under any
+#     of those -- so that entry never fires on stock either. It is
+#     u:object_r:sysfs:s0 on this device and the plain sysfs read below covers it.
+allow hardware_rev sysfs:dir r_dir_perms;
+allow hardware_rev sysfs:file r_file_perms;
+allow hardware_rev sysfs:lnk_file r_file_perms;
+
+# The Samsung/LSI touch nodes, QCOM's own type, for the PATH_TOUCH_MMI branch.
+allow hardware_rev vendor_sysfs_sectouch:dir r_dir_perms;
+allow hardware_rev vendor_sysfs_sectouch:file r_file_perms;
+
+# BEYOND STOCK PARITY: /proc/cpuinfo. The "Compile ap" block loops over
+# `cat /proc/cpuinfo` to fill in the ap revision file, and stock's hardware_rev
+# has no proc rule at all -- so on stock that file can only ever have come out
+# with an empty hw_name/vendor_id. Granted here because the whole point of the
+# port is to make the script produce real data.
+allow hardware_rev proc:dir r_dir_perms;
+allow hardware_rev proc:file r_file_perms;
+
+# ro.boot.storage (nvm size fallback) and ro.vendor.mot.hw.lid (the fold/flip
+# check in copy_panel_revision_data). The latter is vendor_mot_hw_prop via the
+# ro.vendor.mot.hw. entry added to property_contexts.
+get_prop(hardware_rev, bootloader_prop)
+get_prop(hardware_rev, vendor_mot_hw_prop)

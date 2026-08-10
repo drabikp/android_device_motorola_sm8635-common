@@ -1,0 +1,41 @@
+# capsense_reset -- /vendor/bin/capsense_reset, started as
+# `vendor.capsense_reset` (init.mmi.overlay.rc:159, class core, user system,
+# group system/input, disabled + triggered at :211).
+#
+# A long-lived daemon, not a oneshot. `strings /vendor/bin/capsense_reset` gives
+# its whole surface: /sys/class/capsense, ".../reset",
+# /sys/class/power_supply/usb/online, and it links against libbinder. It
+# subscribes to the framework sensor service, watches USB attach/detach, and
+# pokes the SAR sensor's reset attribute when the capacitive baseline needs
+# re-taking after a charger plug.
+
+type capsense_reset, domain;
+type capsense_reset_exec, exec_type, vendor_file_type, file_type;
+
+init_daemon_domain(capsense_reset)
+
+# It talks to system_server through android.frameworks.sensorservice.ISensorManager,
+# which is fwk_sensor_service. This is the same pattern hal_camera_default,
+# hal_fingerprint_default, hal_audio_default and hal_face_default already use in
+# system/sepolicy/vendor -- a vendor domain finding a framework service -- so
+# there is no Treble neverallow in the way.
+binder_use(capsense_reset)
+binder_call(capsense_reset, system_server)
+allow capsense_reset fwk_sensor_service:service_manager find;
+
+# The uevent socket it watches for the USB plug transition.
+allow capsense_reset self:netlink_kobject_uevent_socket { create bind read write getattr setattr getopt setopt connect append lock map shutdown };
+
+# /dev/input -- it correlates with the input subsystem, same as mot_flip_count.
+allow capsense_reset input_device:dir r_dir_perms;
+allow capsense_reset input_device:chr_file r_file_perms;
+
+# /sys/class/capsense/*/reset (write) and /sys/class/power_supply/usb/online
+# (read). Plain sysfs rather than stock's sysfs_capsense -- see the argument in
+# init_capsensor.te; both paths are u:object_r:sysfs:s0 here.
+allow capsense_reset sysfs:dir r_dir_perms;
+allow capsense_reset sysfs:file rw_file_perms;
+allow capsense_reset sysfs:lnk_file r_file_perms;
+
+# Progress and error reporting to /dev/kmsg.
+allow capsense_reset kmsg_device:chr_file rw_file_perms;

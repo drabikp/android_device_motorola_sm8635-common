@@ -1,0 +1,80 @@
+# Face unlock. /vendor/bin/hw/android.hardware.biometrics.face-service.face-isv is
+# Tetras.AI's camera-based AIDL HAL, and it is the last member of the family this
+# tree keeps tripping over: init refused to start it because the binary was
+# labelled vendor_file. Proven live rather than assumed --
+#
+#   $ start biometrics-face-hal
+#   Unable to start service 'biometrics-face-hal'
+#   init: Could not ctl.start for 'biometrics-face-hal': File
+#         /vendor/bin/hw/android.hardware.biometrics.face-service.face-isv
+#         (labeled "u:object_r:vendor_file:s0") has incorrect label or no domain
+#         transition from u:r:init:s0 to another SELinux domain defined.
+#
+# CAREFUL ABOUT THE CAUSALITY HERE. Today the framework does NOT hang: SystemServer
+# only constructs FaceService when the android.hardware.biometrics.face FEATURE is
+# present, and it is not, so the observed symptom is one non-fatal line,
+# "AuthService: Face configuration exists, but FaceService is null". It is the
+# feature XML shipped alongside this policy that creates the wait-on-a-dead-HAL
+# condition -- which is exactly why the feature XML, the VINTF fragment and this
+# exec label must land in ONE change and never separately.
+#
+# THE DOMAIN IS AOSP'S hal_face_default, NOT STOCK'S hal_biometric_face. Stock
+# labels this binary hal_biometric_face_exec, a Motorola type. We reuse AOSP's
+# hal_face_default (system/sepolicy/vendor/hal_face_default.te) exactly as the FPC
+# fingerprint HAL reuses hal_fingerprint_default here: it already carries
+# hal_server_domain(hal_face_default, hal_face), so the framework client side and
+# the binder plumbing come for free, and the exec type already exists. The rules
+# below are the delta -- stock's hal_biometric_face rules that AOSP's domain does
+# not already imply. Anything still missing will show up as a denial rather than
+# as a service that never runs.
+
+# The face HAL IS a camera client -- this is 2D/3D camera-based authentication,
+# not a dedicated sensor. Stock: hal_biometric_face -> fwk_camera_hwservice,
+# hidl_token_hwservice, fwk_camera_service.
+allow hal_face_default fwk_camera_hwservice:hwservice_manager find;
+allow hal_face_default hidl_token_hwservice:hwservice_manager find;
+allow hal_face_default fwk_camera_service:service_manager find;
+get_prop(hal_face_default, camera_config_prop)
+
+# It composites through SurfaceFlinger (the enrolment preview).
+allow hal_face_default surfaceflinger_service:service_manager find;
+allow hal_face_default surfaceflinger:binder call;
+get_prop(hal_face_default, vendor_display_prop)
+
+# QTEE. The AIDL HAL reaches the faceauth trusted app through libQSEEComAPI.so, so
+# it needs the same chain the fingerprint HAL needed: the TEE character device plus
+# the two qseecom dmabuf heaps its shared buffers come from. (libFace3D*.so belong
+# to the LEGACY HIDL HAL, not to this binary.)
+allow hal_face_default tee_device:chr_file rw_file_perms;
+allow hal_face_default vendor_dmabuf_qseecom_ta_heap_device:chr_file r_file_perms;
+allow hal_face_default vendor_dmabuf_qseecom_heap_device:chr_file r_file_perms;
+
+# Enrolment templates and per-device config, under the two directories the HAL's
+# own init rc creates in on post-fs-data:
+#   mkdir /data/vendor/.face 0770 system system
+#   mkdir /data/vendor/tetras_data 0770 system system
+#   mkdir /data/vendor/tetras_data/config 0770 system system
+allow hal_face_default tetras_config_file:dir create_dir_perms;
+allow hal_face_default tetras_config_file:file create_file_perms;
+
+# vendor.faceauth.* -- the HAL's own control namespace, and the one prefix here it
+# SETS, which is the only reason it earns a type; see property.te for why reads
+# alone never justify one. The names the binary actually uses are
+# vendor.faceauth.{version,image.dump.enable,image.algolog.enable,
+# image.timestat.enable,image.dump_encrypt.enable}. Stock's property_contexts also
+# lists vendor.faceauth.cli.lidstate, but that string appears in NO other file in
+# the whole stock firmware -- nothing sets or reads it.
+set_prop(hal_face_default, vendor_tetras_prop)
+
+# NOT PORTED from stock:
+#   vendor_tetras_debug_prop / tetras_debug_file -- vendor.tetras.debug.dump_data
+#   and /data/vendor/tetras_data/{debug,img_dump}, /data/vendor/tzstorage/img.
+#   Those are the raw-face-image dump paths: a debugging aid on stock and a privacy
+#   liability on a user build. The file_contexts pattern here is deliberately
+#   /data/vendor/tetras_data/config(/.*)? and NOT the whole tetras_data tree, so
+#   those two sibling directories keep the generic vendor_data_file label and the
+#   HAL gets nothing on them.
+#   vendor_biometricsface_exec -- stock's type for the LEGACY HIDL
+#   android.hardware.biometrics.face@1.0-service.face. We ship that binary (it
+#   comes with the same blob set) but nothing should be running it: the AIDL HAL
+#   above is what serves IFace/default. Leaving it unlabelled keeps it unstartable.

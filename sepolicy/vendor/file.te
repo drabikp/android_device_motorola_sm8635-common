@@ -25,3 +25,48 @@ type fsg_file, file_type, contextmount_type, vendor_file_type;
 # type (stock vendor_sepolicy.cil line 3290); see genfs_contexts for the
 # labelling and init_hw.te for what reads and writes it.
 type proc_hwconf, fs_type, proc_type;
+
+# ---------------------------------------------------------------------------
+# Types for the 15 Motorola /vendor/bin services ported in this change.
+# Every type below has a matching entry in file_contexts; nothing is declared
+# that nothing gets labelled with.
+# ---------------------------------------------------------------------------
+
+# /data/vendor/hardware_revisions -- the MOTHREV-v2 one-line-per-component
+# summary hardware_revisions.sh writes (ram, nvm, ap, pmic, display, touch...).
+# Stock type and path: vendor_file_contexts:857. It is currently
+# vendor_data_file on the device, which hardware_rev would not be able to write
+# without granting it all of /data/vendor -- hence a type of its own.
+type hwrev_data_file, file_type, data_file_type;
+
+# /data/vendor/dontpanic -- where apanic_copy.sh drops the kpan partition dump,
+# the bootloader log (BL_logs) and the minidump tarball.
+# Stock type and path: vendor_file_contexts:699.
+type panic_data_file, file_type, data_file_type;
+
+# /data/vendor/dropbox-add -- the staging directory the framework's DropBoxManager
+# picks panic/wdt reports out of. Stock: vendor_file_contexts:726.
+type vendor_dropbox_data_file, file_type, data_file_type;
+
+# /data/vendor/aplogd and /data/vendor/power_supply_logger. Stock gives BOTH
+# paths this one type (vendor_file_contexts:663 and :957) even though only the
+# second is what batt_health writes -- `strings batt_health` shows
+# power_supply_info.csv, generic_info.csv, memtest.log and friends all under
+# /data/vendor/power_supply_logger. The aplogd path is included because it is
+# stock's and because /vendor/bin/aplogd ships on this device; it has no domain
+# in this tree yet, so today that entry only moves an unused directory off
+# vendor_data_file.
+type aplog_data_file, file_type, data_file_type;
+
+# /mnt/vendor/persist/batt_health -- the four persistent battery facts
+# (age, cycles, first_usage_date, manufacturing_date) batt_health owns.
+# Stock has TWO conflicting entries for this directory, pds_batt_file
+# (vendor_file_contexts:140) and persist_batt_file (:858). In file_contexts the
+# later pattern wins, so pds_batt_file is dead on stock too and is not ported.
+type persist_batt_file, file_type, vendor_persist_type;
+
+# Face unlock enrolment templates and per-device config. Stock's type, from its
+# vendor_file_contexts:593 (/data/vendor/.face) and :859
+# (/data/vendor/tetras_data/config). See hal_face_default.te for why the sibling
+# tetras_debug_file (the raw-image dump paths) is deliberately NOT declared.
+type tetras_config_file, file_type, data_file_type;

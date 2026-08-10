@@ -1,0 +1,49 @@
+# init_block_perm -- /vendor/bin/init.mmi.block_perm.sh, started as
+# `vendor.mmi-block-perm` (init.mmi.rc:366, class main, user root, oneshot).
+#
+# Ten lines of chown/chmod. It is what makes the Motorola factory-data
+# partitions reachable by the groups that own them, using `chown -L` / `chmod -L`
+# so the mode lands on the /dev/block/sdXN node behind the by-name symlink:
+#
+#   utags, utagsBackup   root:system      0660   (the UTAG store)
+#   hob, dhob            radio:radio      0660
+#   clogo                root:vendor_tcmd 0660
+#   cid                  root:vendor_tcmd 0660
+#   logs                 root:system      0640   (only if it exists)
+#
+# WHICH OF THOSE ARE REAL ON ARCFOX. Checked against
+# `ls /dev/block/platform/soc/1d84000.ufshc/by-name/` on the live device:
+# utags and utagsBackup exist, cid exists, and hob / dhob / clogo do NOT.
+# `logs` does not either -- this device has `logfs`, and the script tests for
+# the literal name `logs`, so that branch never fires. So only two of the five
+# groups of rules are ported.
+
+type init_block_perm, domain;
+type init_block_perm_exec, exec_type, vendor_file_type, file_type;
+
+init_daemon_domain(init_block_perm)
+
+allow init_block_perm vendor_shell_exec:file rx_file_perms;
+allow init_block_perm vendor_toolbox_exec:file rx_file_perms;
+allow init_block_perm vendor_file:file execute_no_trans;
+
+# The two partitions it can actually reach. getattr+setattr is all chown/chmod
+# needs -- it never opens them.
+allow init_block_perm block_device:dir search;
+allow init_block_perm utags_block_device:blk_file { getattr setattr };
+allow init_block_perm cid_block_device:blk_file { getattr setattr };
+
+# The service runs as root; CAP_CHOWN for the owner change and CAP_FOWNER for
+# chmod on nodes it does not own.
+allow init_block_perm self:capability { chown fowner };
+
+# DROPPED, all four for the same reason -- arcfox has no such partition, so the
+# type would label nothing and the rule could never fire:
+#   modem_hob_block_device   hob, dhob
+#   clogo_block_device       clogo
+#   bllogs_block_device      the script's `logs`; this device has `logfs`, which
+#                            IS declared and labelled bllogs_block_device, but
+#                            for apanic (which probes both names) rather than
+#                            for this script (which probes only `logs`)
+#   kpan_block_device        stock grants it here too, but nothing in the script
+#                            touches kpan. It is declared for apanic.

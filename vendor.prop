@@ -594,16 +594,35 @@ persist.vendor.usb.config=adb
 # than parity: with it set, rmt_storage registers the FSG; without it, it does
 # not.
 #
-# 0 is not a guess: /vendor/fsg contains exactly one .img.gz, 0.img.gz, next to
-# the per-carrier .mbn files, and it is what the single-component
-# "%s/fsg/%s.img.gz" pattern resolves against.
+# rmt_storage's Motorola FSG client builds EVERY candidate path as
+# "%s/fsg/..." where the leading %s is ro.vendor.build.vendorprefix, read once at
+# rmt_storage+0x9568. Stock sets it in vendor/build.prop; this build left it unset,
+# so every candidate resolved to /fsg/... and gzopen failed on all of them. Without
+# this line the ro.vendor.hw.device/.revision fix below buys nothing.
+ro.vendor.build.vendorprefix=/vendor
+
+# ⚠️ REMOVED. This used to read `ro.vendor.fsg-id=0`, justified by the claim that
+# "/vendor/fsg contains exactly one .img.gz, 0.img.gz". THAT WAS FALSE, and it was
+# actively harmful.
 #
-# Verified live: with this set, rmt_storage logs
-#   "Registering fsg: 0x58 /boot/modem_fsg"
-# which it never does otherwise. NOT yet sufficient on its own -- see
-# HANDOFF-NEXT.md; the radio still needs a cold boot with this and the block
-# device labels in place from the start.
+# The claim was made against the build tree's own (empty) vendor/fsg directory.
+# At runtime /vendor/fsg is a MOUNT of the fsg_a partition, and it holds 253
+# .img.gz files. Measured on the device:
 #
-# Properly fixing init.oem.hw.sh's label would set this AND every other
-# ro.boot.hw.* in one go, and is the better long-term fix.
-ro.vendor.fsg-id=0
+#   /vendor/fsg/0.img.gz                     12,521 bytes   generic stub
+#   /vendor/fsg/arcfoxpvt1_dsds_row.img.gz  574,270 bytes   THIS unit's image
+#
+# rmt_storage is Motorola-patched: its /boot/modem_fsg client (mot_open_gzfsg)
+# composes the image name from ro.vendor.hw.device + ro.vendor.hw.revision +
+# persist.vendor.radio.multisim.config + ro.vendor.hw.radio, and only falls back
+# to the single-component "%s/fsg/%s.img.gz" pattern. Setting fsg-id=0 forced that
+# fallback, so the modem was handed the 12 KB STUB as its FSG -- and "Registering
+# fsg: 0x58 /boot/modem_fsg" appearing in the log was registration of the stub,
+# not evidence of correctness.
+#
+# With ro.vendor.hw.device=arcfox and ro.vendor.hw.revision=pvt1 restored (see the
+# vendor_init grants in sepolicy/vendor/property.te -- those five properties were
+# being silently dropped), the composed path resolves to the real image. Confirm
+# in kmsg with: GZFSG opened final path /vendor/fsg/arcfoxpvt1_dsds_row.img.gz
+#
+# Do not reinstate this without re-checking that image name against the device.

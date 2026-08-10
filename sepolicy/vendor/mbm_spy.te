@@ -1,0 +1,61 @@
+# mbm_spy -- /vendor/bin/mbm_spy, started as `vendor.mbm_spy`
+# (init.mmi.rc:531, class late_start, user/group system, oneshot, disabled).
+#
+# "MBM" is Motorola's modem/bootloader version bookkeeping. `strings mbm_spy`
+# shows it reading the build and modem identity and stamping it into the UTAG
+# store so the bootloader and the factory tools can see what software the unit
+# last ran:
+#
+#   /dev/block/bootdevice/by-name/utags, /utagsBackup   (read AND write)
+#   /dev/rtc0                                           (the timestamp)
+#   /proc/bootinfo, /proc/version
+#   ro.build.fingerprint, ro.vendor.build.version.qcom, ro.vendor.version.qcom
+#   ro.vendor.boot_seq, ro.boot.cid_sw, ro.carrier, ro.vendor.carrier
+#   vendor.ril.gsm.version.baseband, vendor.ril.baseband.config.version
+#   vendor.spu.{ari_status,por_status,normal_boot_mismatch,por_boot_mismatch}
+#
+# Note it goes at the utags partition DIRECTLY rather than through /proc/config,
+# which is why it needs the block device and not proc_hwconf.
+
+type mbm_spy, domain;
+type mbm_spy_exec, exec_type, vendor_file_type, file_type;
+
+init_daemon_domain(mbm_spy)
+
+# The UTAG partitions. utags_block_device is already declared (device.te) and
+# labelled (file_contexts) from the init_hw work; the by-name paths mbm_spy uses
+# are the /dev/block/bootdevice/ spelling of the same nodes -- bootdevice is a
+# symlink to /dev/block/platform/soc/1d84000.ufshc, verified with ls -ld.
+allow mbm_spy block_device:dir search;
+allow mbm_spy utags_block_device:blk_file rw_file_perms;
+
+# /dev/rtc0, u:object_r:rtc_device:s0 on this device (ls -Z).
+allow mbm_spy rtc_device:chr_file r_file_perms;
+
+# /proc/bootinfo and /proc/version. proc_bootinfo is not declared -- see
+# mmi_boot.te for why; /proc/bootinfo is plain proc here.
+allow mbm_spy proc:dir r_dir_perms;
+allow mbm_spy proc:file r_file_perms;
+allow mbm_spy proc:lnk_file r_file_perms;
+allow mbm_spy proc_version:file r_file_perms;
+
+# Properties.
+#
+# Stock uses the attribute mot_core_property_type here, which on stock covers
+# twenty Motorola property types. This tree has three of them
+# (vendor_mot_hw_prop, vendor_mot_init_prop, vendor_mot_product_prop), so the
+# attribute is replaced with the two the binary's strings actually name --
+# ro.vendor.boot_seq is vendor_mot_init_prop (set by mmi_boot) and the
+# ro.vendor.hw.* family is vendor_mot_hw_prop.
+#
+# vendor.ril.* is vendor_radio_prop, QCOM's type, already in this tree.
+# ro.build.* / ro.vendor.build.* are build_prop / build_vendor_prop.
+#
+# NOT PORTED: vendor_mot_spu_prop. mbm_spy only READS vendor.spu.*, and that
+# prefix falls through to vendor_default_prop, which domain.te:508 already hands
+# to every non-core non-app domain. Creating the type would cost that read.
+get_prop(mbm_spy, vendor_mot_hw_prop)
+get_prop(mbm_spy, vendor_mot_init_prop)
+get_prop(mbm_spy, vendor_radio_prop)
+get_prop(mbm_spy, build_prop)
+get_prop(mbm_spy, bootloader_prop)

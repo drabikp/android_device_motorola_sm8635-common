@@ -1,0 +1,45 @@
+# init_capsensor -- /vendor/bin/init.mmi.cap.sh, started as `vendor.mmi-cap-sh`
+# (init.mmi.overlay.rc:182, class core, user root, oneshot).
+#
+# The SAR (specific absorption rate) capacitive sensor bring-up. It waits up to
+# ten seconds for /sys/class/capsense/capsense0, then hands the factory
+# calibration attributes to system:system for each of capsense0 and capsense1:
+#
+#   fac_detect fac_enable fac_cal fac_irq_state fac_compensation fac_raw reset
+#
+# arcfox has both instances -- /sys/class/capsense/capsense{0,1} exist and point
+# at /sys/devices/virtual/capsense/capsense{0,1}.
+
+type init_capsensor, domain;
+type init_capsensor_exec, exec_type, vendor_file_type, file_type;
+
+init_daemon_domain(init_capsensor)
+
+# BEYOND STOCK PARITY: vendor_shell_exec. The script is #!/vendor/bin/sh and
+# /vendor/bin/sh is u:object_r:vendor_shell_exec:s0 on this device (ls -Z), but
+# stock's init_capsensor has no rule for it at all -- the same omission it has
+# for qclicense_copy. Granted here rather than reproducing a stock bug.
+allow init_capsensor vendor_shell_exec:file rx_file_perms;
+allow init_capsensor vendor_toolbox_exec:file rx_file_perms;
+
+# notice() to /dev/kmsg. Stock grants only { open write } here; rw_file_perms is
+# what every other script domain in this tree uses.
+allow init_capsensor kmsg_device:chr_file rw_file_perms;
+
+# The capsense sysfs.
+#
+# NOT DECLARED: stock's sysfs_capsense. Stock labels it through file_contexts
+# (/sys/class/capsense(/.*)? and /sys/devices/virtual/capsense/capsense[01](/.*)?)
+# and grants it to init_capsensor, capsense_reset, tcmd and hal_sensors. Two of
+# those four have no domain here, but hal_sensors_default DOES -- and on this
+# device both paths are u:object_r:sysfs:s0, which is how the sensors HAL reaches
+# them today. Relabelling would take the SAR sensor away from the HAL to serve
+# two oneshot scripts, so plain sysfs is used instead and the two scripts get
+# setattr rather than a type of their own.
+allow init_capsensor sysfs:dir r_dir_perms;
+allow init_capsensor sysfs:file { getattr setattr };
+allow init_capsensor sysfs:lnk_file r_file_perms;
+
+# chown system:system. The service runs as root, so CAP_CHOWN is what it needs;
+# chmod 0660 on a root-owned file needs nothing extra. Stock grants chown only.
+allow init_capsensor self:capability chown;

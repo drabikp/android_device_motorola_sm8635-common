@@ -1,0 +1,57 @@
+# init_wls -- /vendor/bin/init.mmi.wls.sh, started as `vendor.mmi-wls-sh`
+# (init.mmi.overlay.rc:187, class main, user root, group root/system, oneshot,
+# disabled + triggered at :235).
+#
+# Two jobs. It waits up to ten seconds for /sys/class/power_supply/wireless to
+# appear and then hands the wireless-charging controls to system:system
+# (tx_mode, wlc_fan_speed, wlc_light_ctl, wlc_st_changed, wlc_tx_*,
+# wls_input_current_limit, and tx_mode_vout to vendor_tcmd:system), so the
+# framework can drive reverse wireless charging. Then it kicks a wireless
+# firmware update:
+#
+#   echo 10000 > /sys/class/qcom-battery/wireless_fw_update_time_ms
+#   echo 1     > /sys/class/qcom-battery/wireless_fw_update
+
+type init_wls, domain;
+type init_wls_exec, exec_type, vendor_file_type, file_type;
+
+init_daemon_domain(init_wls)
+
+allow init_wls vendor_shell_exec:file rx_file_perms;
+allow init_wls vendor_toolbox_exec:file rx_file_perms;
+
+# notice() to /dev/kmsg.
+allow init_wls kmsg_device:chr_file rw_file_perms;
+
+# /sys/class/qcom-battery -- already u:object_r:vendor_sysfs_battery_supply:s0
+# in this tree (sepolicy_vndr/sm8650/generic/vendor/common/genfs_contexts:156)
+# and confirmed as such on the device, so the two firmware-update writes need
+# nothing new.
+allow init_wls vendor_sysfs_battery_supply:dir r_dir_perms;
+allow init_wls vendor_sysfs_battery_supply:file rw_file_perms;
+allow init_wls vendor_sysfs_usb_supply:dir r_dir_perms;
+
+# The wireless charger attributes themselves.
+#
+# NOT DECLARED: stock's sysfs_wls_dev. It would take about twenty genfscon lines
+# to reproduce (stock has one per attribute under
+# .../soc:qcom,pmic_glink:qcom,battery_charger/), and every one of those
+# attributes is u:object_r:sysfs:s0 on this device today. The only stock domains
+# that read the type are hal_motwlc_server and hal_motpowershare_server, neither
+# of which exists in this tree -- so relabelling would serve exactly one domain,
+# this one, at the cost of taking the nodes away from anything that reads them
+# as sysfs. What init_wls actually needs from them is chmod/chown, so plain
+# sysfs:file setattr is the honest port.
+#
+# Path walk: /sys/class/power_supply/wireless is a symlink into
+# .../soc:qcom,pmic_glink:qcom,battery_charger/power_supply/wireless, and
+# /sys/class/power_supply/wireless/device points back up to the charger device
+# -- both plain sysfs (ls -Zd), hence the dir search and lnk_file read.
+allow init_wls sysfs:dir r_dir_perms;
+allow init_wls sysfs:file { getattr setattr };
+allow init_wls sysfs:lnk_file r_file_perms;
+allow init_wls self:capability { chown fowner fsetid };
+
+# NOT PORTED: firmware_file dir/file/lnk. Stock grants it, but this script never
+# opens /vendor/firmware_mnt -- the wireless firmware image is pushed by the
+# driver, not by the script.

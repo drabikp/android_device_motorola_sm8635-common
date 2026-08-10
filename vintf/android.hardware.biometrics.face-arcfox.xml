@@ -1,0 +1,46 @@
+<!--
+     Face unlock VINTF declaration.
+
+     This REPLACES the extracted blob vendor/etc/vintf/manifest/face-default_3.xml,
+     which is dropped from proprietary-files.txt. Two reasons:
+
+     1. THE BLOB IN THE VENDOR TREE HAD BEEN HAND-EDITED TO version 4. Stock's copy
+        says 3, and the vendor blob tree is not under version control, so that edit
+        was untracked and would vanish on the next extract. Shipping our own file
+        makes it reproducible and reviewable.
+
+     2. VERSION 4 WAS WRONG. The implementation is V3:
+
+          $ readelf -dW android.hardware.biometrics.face-service.face-isv | grep NEEDED
+            android.hardware.biometrics.face-V3-ndk.so
+            android.hardware.biometrics.common-V3-ndk.so
+
+        This is the same shape as the wifi HAL bug. A blob declared at a version it
+        does not implement registers cleanly and then aborts inside the newer NDK
+        backend on the first real transaction. Declare what the binary serves.
+
+        Nothing forced the bump either: AOSP's own framework compatibility matrix
+        (hardware/interfaces/compatibility_matrices/compatibility_matrix.202404.xml
+        and .202504.xml) accepts version 3-4 for this HAL.
+
+     DECLARING THIS HAL IS ONLY SAFE ALONGSIDE THE SEPOLICY THAT LETS IT START,
+     and alongside the feature XML. While the binary was labelled vendor_file init
+     could not exec it:
+
+       init: Could not ctl.start for 'biometrics-face-hal': File
+             /vendor/bin/hw/android.hardware.biometrics.face-service.face-isv
+             (labeled "u:object_r:vendor_file:s0") has incorrect label or no
+             domain transition from u:r:init:s0
+
+     That did not hang anything, because SystemServer only builds FaceService when
+     the android.hardware.biometrics.face feature is declared, and it was not. The
+     three pieces together are safe; the feature XML on its own would recreate the
+     declared-but-absent stall that hit weaver and fingerprint earlier in this port.
+-->
+<manifest version="1.0" type="device">
+    <hal format="aidl">
+        <name>android.hardware.biometrics.face</name>
+        <version>3</version>
+        <fqname>IFace/default</fqname>
+    </hal>
+</manifest>

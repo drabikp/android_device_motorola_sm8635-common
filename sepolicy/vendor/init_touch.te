@@ -1,0 +1,96 @@
+# init_touch -- /vendor/bin/init.mmi.touch.sh, started as `vendor.mmi-touch-sh`
+# (init.mmi.rc:566, class core, user root, oneshot).
+#
+# The touch firmware updater. For each entry in /sys/class/touchscreen it reads
+# the IC's productinfo/buildid, picks the newest matching image out of
+# /vendor/firmware by filename, flashes it through the driver's
+# forcereflash/doreflash sysfs pair, then hands the factory-test attributes
+# (drv_irq, hw_irqstat, reset, stats) to root:vendor_tcmd / root:log. It also
+# derives the backlight-curve and panel-declare properties from
+# /sys/class/drm/card0-DSI-{1,2}.
+#
+# On this ROM none of that ran, so the panels kept whatever firmware they
+# booted with and vendor.hw.touch.*.status was never set.
+
+type init_touch, domain;
+type init_touch_exec, exec_type, vendor_file_type, file_type;
+
+init_daemon_domain(init_touch)
+
+allow init_touch vendor_shell_exec:file rx_file_perms;
+allow init_touch vendor_toolbox_exec:file rx_file_perms;
+
+# /vendor/bin/init.oem.panel.sh -- load_driver_modules() runs it with -s
+# <supplier> to insmod the right panel DLKM. It is plain vendor_file.
+allow init_touch vendor_file:file execute_no_trans;
+
+# notice()/debug() to /dev/kmsg.
+allow init_touch kmsg_device:chr_file rw_file_perms;
+
+# reload_modules() does rmmod/insmod on $dlkm_path/<module>.ko for the
+# synaptics F54 reporting module. Same broad grant, and same caveat, as
+# init_hw.te's insmod block: this lets a shell-script domain load any vendor .ko.
+allow init_touch self:capability sys_module;
+allow init_touch vendor_file:system module_load;
+
+# Firmware images live in /vendor/firmware, which is plain vendor_file on this
+# device; the script cd's there and globs.
+#
+# NOT PORTED: stock's firmware_file dir/file/lnk rules. firmware_file is QCOM's
+# type for /vendor/firmware_mnt (the modem image mount), not /vendor/firmware,
+# and this script never looks there.
+allow init_touch vendor_file:dir r_dir_perms;
+
+# The touch sysfs. THIS IS DELIBERATELY PLAIN `sysfs` AND NOT stock's
+# sysfs_touchclass, which is a real decision and not an oversight:
+#
+#   - sysfs_touchclass only ever covers /sys/class/touchscreen and
+#     /sys/devices/virtual/touchscreen (stock genfscon lines 423 and 465). The
+#     files this script actually reads and writes are under
+#     touch_path=/sys$(cat /sys/class/touchscreen/<inst>/path), i.e. the real
+#     i2c/spi device node somewhere under /sys/devices/platform -- which is
+#     plain sysfs on stock too.
+#   - both paths are u:object_r:sysfs:s0 on this device today (checked with
+#     ls -Zd), and hal_sensors_default is one of the domains stock grants
+#     sysfs_touchclass to. Relabelling them here would TAKE the touch class away
+#     from the sensors HAL, which reads it as sysfs today, to gain nothing.
+#
+# Stock itself grants init_touch `sysfs:file { setattr write }` on top of
+# sysfs_touchclass, so the write/setattr breadth below is stock's, not new.
+allow init_touch sysfs:dir r_dir_perms;
+allow init_touch sysfs:file rw_file_perms;
+allow init_touch sysfs:file setattr;
+allow init_touch sysfs:lnk_file r_file_perms;
+allow init_touch self:capability { chown fowner };
+
+# QCOM's own type for the Samsung/LSI touch nodes under
+# /sys/devices/virtual/sec, which setup_permissions() chowns for the samsung and
+# stmicro branches. Already declared by device/qcom/sepolicy_vndr.
+allow init_touch vendor_sysfs_sectouch:dir r_dir_perms;
+allow init_touch vendor_sysfs_sectouch:file rw_file_perms;
+allow init_touch vendor_sysfs_sectouch:file setattr;
+
+# Properties.
+#   vendor.hw.touch.<instance>.{status,update}  vendor_mot_hw_prop
+#   ro.vendor.touch.{fw_version,supplier_vendor},
+#   persist.vendor.touch.calibration            vendor_mot_touchscreen_prop (new,
+#                                               see property.te)
+#   ro.vendor.hw.{device,revision}              read, to build the firmware-file
+#                                               glob; both come from
+#                                               init.oem.hw.sh
+#   ro.bootmode, ro.boot.selinux                bootloader_prop -- setup_permissions()
+#                                               only loosens the vendor debug
+#                                               nodes on mot-factory/permissive
+set_prop(init_touch, vendor_mot_hw_prop)
+set_prop(init_touch, vendor_mot_touchscreen_prop)
+get_prop(init_touch, bootloader_prop)
+
+# `start vendor.touchUpg` in the find_in_param branch. That service does exist
+# in our init.mmi.rc (line 571), so this is live rather than dead.
+set_prop(init_touch, ctl_start_prop)
+
+# NOT GRANTED: set on powerctl_prop. Stock has it, and error_and_leave() does
+# contain `setprop sys.powerctl reboot` -- but every line of that block is
+# COMMENTED OUT in the shipped script (the "#if [ $((reboot_cnt)) -lt 2 ]"
+# stanza). Granting a reboot to a boot-time script for a code path that cannot
+# execute is not worth stock parity.

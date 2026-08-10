@@ -1,0 +1,57 @@
+# mmi_attest_chk -- /vendor/bin/init.mmi.attest_model.sh, started as
+# `vendor.mmi-attest-model-sh` with /vendor/etc/attest_model_list.txt as its
+# only argument (init.mmi.rc:493, class core, user root, oneshot).
+#
+# Key attestation on Motorola hardware is bound to a MODEL STRING that is
+# provisioned per unit. This script makes sure the string the device presents
+# actually verifies:
+#
+#   1. if persist.vendor.mot.model_for_attestation is empty, seed it from
+#      ro.product.vendor.model
+#   2. bail out unless ro.vendor.boot.serialno starts with N/n (prototype units
+#      only), the build is `user` and ro.bootmode is `normal`
+#   3. run `/vendor/bin/mot_attest_check --tee --verify_model <model>` and, if it
+#      fails, walk /vendor/etc/attest_model_list.txt until one verifies, then
+#      persist that one
+#
+# The --tee flag is why this domain needs a qipcrtr socket and servicemanager:
+# mot_attest_check runs execute_no_trans in this domain and talks to the TEE.
+
+type mmi_attest_chk, domain;
+type mmi_attest_chk_exec, exec_type, vendor_file_type, file_type;
+
+init_daemon_domain(mmi_attest_chk)
+
+allow mmi_attest_chk vendor_shell_exec:file rx_file_perms;
+allow mmi_attest_chk vendor_toolbox_exec:file rx_file_perms;
+
+# /vendor/bin/mot_attest_check, plain vendor_file. It runs with
+# LD_LIBRARY_PATH=/vendor/lib64/hw:/vendor/lib/hw:/vendor/lib64/alt.
+allow mmi_attest_chk vendor_file:file execute_no_trans;
+
+# notice() to /dev/kmsg.
+allow mmi_attest_chk kmsg_device:chr_file rw_file_perms;
+
+# /vendor/etc/attest_model_list.txt -- the argv[1] the service passes in.
+# Confirmed u:object_r:vendor_configs_file:s0 on the device (ls -Z).
+allow mmi_attest_chk vendor_configs_file:dir r_dir_perms;
+allow mmi_attest_chk vendor_configs_file:file r_file_perms;
+allow mmi_attest_chk vendor_configs_file:lnk_file r_file_perms;
+
+# mot_attest_check's route to the TEE: a QRTR socket and a servicemanager
+# lookup. STOCK PARITY -- stock grants exactly these two and no HAL-specific
+# rules, so if the binary needs more it will surface as a denial rather than as
+# a service that never runs.
+allow mmi_attest_chk self:qipcrtr_socket { create getattr read write setopt };
+allow mmi_attest_chk servicemanager:binder call;
+
+# persist.vendor.mot.model_for_attestation -> vendor_mot_init_prop (see
+# property_contexts). ro.bootmode is bootloader_prop.
+#
+# ro.product.vendor.model, ro.vendor.build.type and ro.vendor.boot.serialno are
+# NOT listed: the first two are build_vendor_prop, which
+# system/sepolicy/private/domain.te already grants every domain, and the third
+# falls through to vendor_default_prop, which domain.te:508 grants every
+# non-core non-app domain.
+set_prop(mmi_attest_chk, vendor_mot_init_prop)
+get_prop(mmi_attest_chk, bootloader_prop)

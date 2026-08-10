@@ -117,3 +117,115 @@
 /dev/block/platform/soc/1d84000\.ufshc/by-name/hw               u:object_r:hw_block_device:s0
 /dev/block/platform/soc/1d84000\.ufshc/by-name/utags            u:object_r:utags_block_device:s0
 /dev/block/platform/soc/1d84000\.ufshc/by-name/utagsBackup      u:object_r:utags_block_device:s0
+
+
+# ===========================================================================
+# THE 15 MOTOROLA /vendor/bin SERVICES init REFUSED TO START.
+#
+# Every one of them failed identically to init.oem.hw.sh above:
+#
+#   Could not start service: File /vendor/bin/<name>
+#   (labeled "u:object_r:vendor_file:s0") has incorrect label or no domain
+#   transition from u:r:init:s0 to another SELinux domain defined.
+#
+# Types and path patterns are taken verbatim from stock's
+# /vendor/etc/selinux/vendor_file_contexts; the line number of each is quoted.
+# Note stock is not internally consistent about the pattern -- some entries use
+# the /(vendor|system/vendor)/ alternation and some a bare /vendor/ -- and that
+# is reproduced rather than normalised, because the bare ones are the ones
+# stock's own build verified.
+# ===========================================================================
+
+/(vendor|system/vendor)/bin/batt_health                         u:object_r:batt_health_exec:s0
+/(vendor|system/vendor)/bin/capsense_reset                      u:object_r:capsense_reset_exec:s0
+/vendor/bin/copy_qc_cert\.sh                                    u:object_r:qclicense_copy_exec:s0
+/(vendor|system/vendor)/bin/hardware_revisions\.sh              u:object_r:hardware_rev_exec:s0
+/(vendor|system/vendor)/bin/init\.mmi\.attest_model\.sh         u:object_r:mmi_attest_chk_exec:s0
+/(vendor|system/vendor)/bin/init\.mmi\.block_perm\.sh           u:object_r:init_block_perm_exec:s0
+/(vendor|system/vendor)/bin/init\.mmi\.boot\.sh                 u:object_r:mmi_boot_exec:s0
+/vendor/bin/init\.mmi\.cap\.sh                                  u:object_r:init_capsensor_exec:s0
+/(vendor|system/vendor)/bin/init\.mmi\.display\.sh              u:object_r:init_display_exec:s0
+/(vendor|system/vendor)/bin/init\.mmi\.touch\.sh                u:object_r:init_touch_exec:s0
+# ⚠️ DELIBERATELY NOT LABELLED IN THIS CHANGE -- the domain in init_usb.te ships,
+# but without this line init still cannot start the script, which is the point.
+# init.mmi.usb.sh reconfigures the USB gadget, and this port's own
+# init/init.arcfox-usb.rc restores a gadget config that init.mmi.usb.rc blanks --
+# a workaround that was written and tuned while this script was NEVER RUNNING.
+# Enabling both at once risks losing adb, which is the only channel to the device
+# and the only way to diagnose everything else in this change. Uncomment it on its
+# own, in its own boot cycle, with fastboot ready.
+# /(vendor|system/vendor)/bin/init\.mmi\.usb\.sh                  u:object_r:init_usb_exec:s0
+/(vendor|system/vendor)/bin/init\.mmi\.wls\.sh                  u:object_r:init_wls_exec:s0
+/(vendor|system/vendor)/bin/mbm_spy                             u:object_r:mbm_spy_exec:s0
+/vendor/bin/mot_flip_count                                      u:object_r:mot_flip_count_exec:s0
+/(vendor|system/vendor)/bin/pstore_annotate\.sh                 u:object_r:apanic_exec:s0
+
+# apanic_exec is shared by FOUR scripts on stock, not just pstore_annotate.sh,
+# and all four ship on this device (verified with `ls /vendor/bin` over adb).
+# init.mmi.rc defines a service for each: vendor.pstore_annotate (:371),
+# vendor.apanic_copy (:377), vendor.bl_logs_copy (:389, the same script with -i)
+# and vendor.apanic_annotate (:409, which runs apanic_save.sh). Labelling only
+# pstore_annotate.sh would leave the other three failing exactly as before, so
+# the whole set is labelled together, as stock does.
+/(vendor|system/vendor)/bin/apanic_copy\.sh                     u:object_r:apanic_exec:s0
+/(vendor|system/vendor)/bin/apanic_save\.sh                     u:object_r:apanic_exec:s0
+/(vendor|system/vendor)/bin/apanic_annotate\.sh                 u:object_r:apanic_exec:s0
+
+# NOT LABELLED: /vendor/bin/kpgather. Stock gives it a domain of its own and a
+# typetransition from apanic (vendor_sepolicy.cil:11485). It is not ported here,
+# so the `kpgather` that apanic_copy.sh runs stays in the apanic domain via
+# `allow apanic vendor_file:file execute_no_trans` -- which is strictly less
+# privilege separation than stock but is the alternative to a 16th domain whose
+# only caller is already covered.
+
+
+# The data directories these services own. Without their own types the domains
+# would have to be given all of /data/vendor (u:object_r:vendor_data_file:s0,
+# which is what these are labelled on the device today). See file.te.
+/data/vendor/hardware_revisions(/.*)?     u:object_r:hwrev_data_file:s0
+/data/vendor/dontpanic(/.*)?              u:object_r:panic_data_file:s0
+/data/vendor/dropbox-add(/.*)?            u:object_r:vendor_dropbox_data_file:s0
+/data/vendor/aplogd(/.*)?                 u:object_r:aplog_data_file:s0
+/data/vendor/power_supply_logger(/.*)?    u:object_r:aplog_data_file:s0
+
+# batt_health's persistent battery facts. /mnt/vendor/persist subdirectories do
+# get their file_contexts labels applied -- verified live: /mnt/vendor/persist/data
+# is already vendor_persist_data_file and /sensors is vendor_persist_sensors_file
+# while the rest of the tree is mnt_vendor_file.
+/mnt/vendor/persist/batt_health(/.*)?     u:object_r:persist_batt_file:s0
+
+# NOT LABELLED: /mnt/vendor/persist/factory. Stock gives it persist_factory_file
+# and grants mmi_boot read on it, but mmi_boot ALSO holds mnt_vendor_file
+# dir/file/lnk read (which it needs anyway, for /mnt/vendor/persist/rkp_complete
+# -- confirmed u:object_r:mnt_vendor_file:s0 on the device). So the only thing
+# in /mnt/vendor/persist/factory that mmi_boot reads, the `fti` blob, is already
+# reachable and a second type would add nothing.
+
+
+# The three extra Motorola partitions. As with hw/utags above, ueventd applies
+# the by-name label to the underlying device node, so the by-name path under the
+# 1d84000.ufshc controller is what has to be listed. Verbatim from stock; note
+# that stock's OTHER entries for these types are under the legacy
+# /dev/block/bootdevice/by-name/ spelling and name partitions (hob, dhob, clogo,
+# logs, logs-charging) that do not exist on arcfox -- those are deliberately not
+# extrapolated here.
+/dev/block/platform/soc/1d84000\.ufshc/by-name/cid              u:object_r:cid_block_device:s0
+/dev/block/platform/soc/1d84000\.ufshc/by-name/kpan             u:object_r:kpan_block_device:s0
+/dev/block/platform/soc/1d84000\.ufshc/by-name/logfs            u:object_r:bllogs_block_device:s0
+
+
+# FACE UNLOCK. The binary was labelled vendor_file, so init could not start it
+# while the VINTF fragment already declared IFace/default -- see
+# hal_face_default.te for the live proof and for why this uses AOSP's
+# hal_face_default rather than stock's Motorola hal_biometric_face type.
+#
+# The legacy HIDL android.hardware.biometrics.face@1.0-service.face is
+# deliberately left unlabelled: we ship the binary because it comes with the same
+# blob set, but the AIDL HAL is what serves IFace/default and the HIDL one should
+# never start.
+/(vendor|system/vendor)/bin/hw/android\.hardware\.biometrics\.face-service\.face-isv  u:object_r:hal_face_default_exec:s0
+
+# The two directories the face HAL's init rc creates in on post-fs-data. Paths and
+# type are stock's (vendor_file_contexts:593, :859).
+/data/vendor/\.face(/.*)?                       u:object_r:tetras_config_file:s0
+/data/vendor/tetras_data/config(/.*)?               u:object_r:tetras_config_file:s0

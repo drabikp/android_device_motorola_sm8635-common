@@ -10,3 +10,24 @@
 # and the utags driver could not open them; see kernel.te for the measurement.
 type hw_block_device, dev_type;
 type utags_block_device, dev_type;
+
+# Two more Motorola partitions, needed by the apanic and init_block_perm
+# domains. Both exist on arcfox -- verified against
+# `ls /dev/block/platform/soc/1d84000.ufshc/by-name/` on the live device:
+#
+#   cid    (sde8)   the carrier/HAB id blob; init.mmi.block_perm.sh chowns it
+#                   root:vendor_tcmd so tcmd can read it
+#   kpan   (sde10)  the kernel-panic ring apanic_save.sh writes from pstore and
+#                   apanic_copy.sh reads back into /data/vendor/dontpanic
+#   logfs  (sde15)  the bootloader's own log area, read by apanic_copy.sh
+#
+# Types are stock's (vendor_file_contexts:870, :875, :879).
+#
+# NOT DECLARED, because arcfox has no such partition and a type nothing is
+# labelled with is dead weight:
+#   modem_hob_block_device  (hob, dhob)      -- absent from by-name
+#   clogo_block_device      (clogo)          -- absent from by-name
+#   psylogs_block_device    (logs-charging)  -- absent from by-name
+type cid_block_device, dev_type;
+type kpan_block_device, dev_type;
+type bllogs_block_device, dev_type;

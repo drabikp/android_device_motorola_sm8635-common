@@ -1,0 +1,108 @@
+# batt_health -- /vendor/bin/batt_health, started as `vendor.batt_health`
+# (init.mmi.rc:415, class late_start, user vendor_pwric, groups
+# vendor_pwric/cache/net_admin/log/system, disabled + property-triggered; also
+# started from init.mmi.charge_only.rc:24).
+#
+# Motorola's battery-health logger. `strings /vendor/bin/batt_health` (from the
+# stock dump) shows exactly what it touches, and that is what this file is
+# scoped to:
+#
+#   /sys/class/power_supply/{battery,mmi_battery}/*  age, cycle_count,
+#                                   first_usage_date, manufacturing_date,
+#                                   status, and update_now (a WRITE)
+#   /sys/class/thermal/*/{type,temp,cur_state}
+#   /mnt/vendor/persist/batt_health/{age,cycles,first_usage_date,
+#                                    manufacturing_date}
+#   /proc/config/batt_firstusagedate and /proc/config/all/.delete   (UTAGs)
+#   /data/vendor/power_supply_logger/*.csv, memtest.log
+#   /vendor/etc/user_dbg_bhd_gen.conf
+#   a netlink uevent socket, for charger plug/unplug
+
+type batt_health, domain;
+type batt_health_exec, exec_type, vendor_file_type, file_type;
+
+init_daemon_domain(batt_health)
+
+# It listens for power_supply uevents rather than polling.
+allow batt_health self:netlink_kobject_uevent_socket { create bind read write getattr setattr getopt setopt connect append lock map shutdown };
+
+# The power-supply and thermal sysfs.
+#
+# WHY PLAIN sysfs AND NOT stock's sysfs_batt: stock's three sysfs_batt paths are
+# /sys/module/qpnp_bms, /sys/module/qpnp_charger and a pm8921 SSBI node, plus a
+# genfscon for /module/qpnp_smbcharger_mmi. NONE of those exist on arcfox --
+# `ls -d /sys/module/qpnp*` returns only qpnp_adaptive_charge and
+# qpnp_amoled_regulator. A type nothing is labelled with is dead weight, so it
+# is dropped. sysfs_muc_uart is dropped for the same reason
+# (/sys/devices/platform/soc/soc:muc_uart does not exist here either).
+#
+# The WRITE on sysfs:file is for /sys/class/power_supply/mmi_battery/update_now.
+# On stock that node is vendor_sysfs_battery_supply via
+# `genfscon sysfs /devices/platform/soc/soc:mmi,charger/power_supply/mmi_battery`;
+# on this device it resolves to exactly that path and is u:object_r:sysfs:s0
+# (checked with ls -Z). Adding stock's genfscon would relabel a node that
+# healthd walks during its power_supply enumeration, so the narrower change is
+# to let this one domain write plain sysfs instead.
+allow batt_health sysfs:dir r_dir_perms;
+allow batt_health sysfs:file rw_file_perms;
+allow batt_health sysfs:lnk_file r_file_perms;
+allow batt_health sysfs_thermal:dir r_dir_perms;
+allow batt_health sysfs_thermal:file r_file_perms;
+allow batt_health sysfs_thermal:lnk_file r_file_perms;
+
+# QCOM's power-supply types, which /sys/class/qcom-battery already carries in
+# this tree (sepolicy_vndr/sm8650/generic/vendor/common/genfs_contexts:156).
+allow batt_health vendor_sysfs_battery_supply:dir r_dir_perms;
+allow batt_health vendor_sysfs_battery_supply:file rw_file_perms;
+allow batt_health vendor_sysfs_battery_supply:lnk_file r_file_perms;
+allow batt_health vendor_sysfs_usb_supply:dir r_dir_perms;
+allow batt_health vendor_sysfs_usb_supply:file r_file_perms;
+allow batt_health vendor_sysfs_usb_supply:lnk_file r_file_perms;
+
+# /mnt/vendor/persist/batt_health -- the four values that must survive a wipe.
+# persist_batt_file is declared in file.te. The dir search + lnk read on
+# mnt_vendor_file is the walk down to it, and is stock's.
+allow batt_health mnt_vendor_file:dir search;
+allow batt_health mnt_vendor_file:lnk_file read;
+allow batt_health persist_batt_file:dir rw_dir_perms;
+allow batt_health persist_batt_file:file create_file_perms;
+
+# /data/vendor/power_supply_logger -- the CSV log set. See file.te for why this
+# and /data/vendor/aplogd share one type.
+allow batt_health aplog_data_file:dir rw_dir_perms;
+allow batt_health aplog_data_file:file create_file_perms;
+
+# /proc/config -- it reads and clears the batt_firstusagedate UTAG so the
+# first-usage date survives a factory reset. proc_hwconf is declared in file.te.
+allow batt_health proc_hwconf:dir search;
+allow batt_health proc_hwconf:file rw_file_perms;
+
+# /vendor/etc/user_dbg_bhd_gen.conf -- its tuning file, u:object_r:
+# vendor_configs_file:s0. BEYOND STOCK PARITY: stock grants batt_health no
+# vendor_configs_file access at all, which means the config read fails there
+# too; it is granted here because the string is in the binary and the read is
+# harmless.
+allow batt_health vendor_configs_file:dir search;
+allow batt_health vendor_configs_file:file r_file_perms;
+
+# ro.boot.{mode,secure_hardware}, ro.bootmode, ro.build.{type,description},
+# ro.product.board.
+get_prop(batt_health, bootloader_prop)
+get_prop(batt_health, build_prop)
+
+# DROPPED, with reasons:
+#   psylogs_block_device      the binary writes /dev/block/bootdevice/by-name/
+#                             logs-charging. That partition does not exist on
+#                             arcfox (checked against the live by-name listing),
+#                             so the type would label nothing.
+#   vendor_memtest_data_file  /data/vendor_de/power_supply_logger. /data/vendor_de
+#                             on this device contains only "0"; the directory is
+#                             never created.
+#   moto_battinfo_prop        a *system*-partition property type in stock -- it
+#                             is in the system_property_type set and has no
+#                             entry in vendor_property_contexts, so there is no
+#                             way to tell which property it labels. That read
+#                             stays on the default label.
+#   sysfs_batteryinfo         stock's genfscon paths for it name pmi8998/pm8921
+#                             SoCs. The type exists in AOSP but nothing on
+#                             arcfox carries it.

@@ -1,0 +1,99 @@
+# apanic -- the domain for Motorola's four panic-handling scripts. Stock gives
+# them ONE exec type between them (vendor_file_contexts:82, :83, :132, :133) and
+# all four ship on arcfox:
+#
+#   pstore_annotate.sh build   vendor.pstore_annotate  (init.mmi.rc:371, class
+#                              main, user system, group log)
+#   apanic_save.sh build       vendor.apanic_annotate  (:409, late_start)
+#   apanic_copy.sh             vendor.apanic_copy      (:377, late_start)
+#   apanic_copy.sh -i          vendor.bl_logs_copy     (:389, late_start)
+#
+# Between them they: annotate the pstore ramoops region with boot context
+# (pstore_annotate.sh), push the pstore contents into the `kpan` partition on
+# the next boot after a panic (apanic_save.sh -> kpreadwrite w), and pull kpan
+# plus the bootloader's `logfs` log back out into /data/vendor/dontpanic and
+# /data/vendor/dropbox-add so the framework's DropBoxManager picks them up
+# (apanic_copy.sh -> kpreadwrite r, kpgather).
+#
+# The task list named only pstore_annotate.sh; the other three fail identically
+# and share the type, so they are handled together.
+
+type apanic, domain;
+type apanic_exec, exec_type, vendor_file_type, file_type;
+
+init_daemon_domain(apanic)
+
+# export PATH=/vendor/bin:/system/bin:$PATH
+allow apanic vendor_shell_exec:file rx_file_perms;
+allow apanic vendor_toolbox_exec:file rx_file_perms;
+
+# /vendor/bin/kpreadwrite, /vendor/bin/kpgather and /vendor/bin/ramdump_dumper
+# are plain vendor_file. STOCK DIFFERS HERE, deliberately: stock gives kpgather
+# a domain of its own with a typetransition from apanic
+# (vendor_sepolicy.cil:11485). Porting a 16th domain whose only caller is
+# already covered is not worth it, so kpgather runs in apanic instead -- less
+# privilege separation than stock, and the reason apanic keeps the dropbox
+# access below that stock splits between the two.
+allow apanic vendor_file:file execute_no_trans;
+
+# /sys/fs/pstore -- the ramoops region. pstore_annotate.sh appends to
+# annotate-ramoops-0; apanic_save.sh reads the console/dmesg records out.
+# pstorefs is AOSP's own type; /sys/fs/pstore is u:object_r:pstorefs:s0 on this
+# device (it is empty right now, which is what a clean boot looks like).
+allow apanic pstorefs:dir rw_dir_perms;
+allow apanic pstorefs:file create_file_perms;
+
+# /proc/driver/mmi_annotate -- the second annotation sink, and the one that
+# actually exists on arcfox (/sys/fs/pstore/annotate-ramoops-0 does not). It is
+# u:object_r:proc:s0, hence the write on plain proc rather than a type of its
+# own. /proc/version is read by the report header.
+#
+# NOT DECLARED: proc_bootinfo -- see the same note in mmi_boot.te; /proc/bootinfo
+# is plain proc here and the rule below already covers it.
+allow apanic proc:file rw_file_perms;
+allow apanic proc_version:file r_file_perms;
+
+# The two partitions the panic logs live on. Both exist on arcfox:
+#   kpan  (sde10)  read AND written -- apanic_save.sh writes pstore into it,
+#                  apanic_copy.sh reads it back
+#   logfs (sde15)  read only -- the bootloader's log, copied to
+#                  /data/vendor/dontpanic/BL_logs. Note apanic_copy.sh tries
+#                  by-name/logs first and falls back to by-name/logfs, and only
+#                  the latter exists here.
+allow apanic block_device:dir search;
+allow apanic kpan_block_device:blk_file rw_file_perms;
+allow apanic bllogs_block_device:blk_file r_file_perms;
+
+# /data/vendor/dontpanic (the dumps) and /data/vendor/dropbox-add (the staging
+# directory the framework drains). See file.te / file_contexts.
+allow apanic panic_data_file:dir rw_dir_perms;
+allow apanic panic_data_file:file create_file_perms;
+allow apanic vendor_dropbox_data_file:dir rw_dir_perms;
+allow apanic vendor_dropbox_data_file:file create_file_perms;
+
+# apanic_copy.sh chowns what it extracts to root:log and chmods it 0640 so
+# Bug2Go can read it; the service runs as user system, so both need privilege.
+allow apanic self:capability { chown fsetid setgid setuid };
+
+# dmesg. STOCK PARITY -- kpgather's report includes the kernel log, and since
+# kpgather runs in this domain here (see above) the grant belongs to apanic.
+allow apanic kernel:system syslog_read;
+
+# Properties.
+#   ro.boot.{mode,console,secure_hardware,hab.cid,verifiedbootstate,veritymode,
+#            cid,cid_sw,device_apdp_state}   bootloader_prop -- these are the
+#            nine values pstore_annotate.sh annotates the dump with, and they are
+#            the whole reason the script exists.
+#   ro.vendor.bootreason                     vendor_mot_init_prop -- apanic_copy.sh
+#            reads it in the -i branch to skip the copy after a coldboot. It is
+#            SET by mmi_boot; see property_contexts.
+get_prop(apanic, bootloader_prop)
+get_prop(apanic, vendor_mot_init_prop)
+
+# NOT GRANTED: set on powerctl_prop. Stock has it, and apanic_save.sh's header
+# comment says "save to emmc, and then reboot device" -- but the shipped script
+# is two lines long and the reboot is not one of them. `grep -n
+# 'powerctl\|reboot' apanic_*.sh pstore_annotate.sh` matches nothing but that
+# stale comment. Granting a late_start oneshot the power to reboot the phone on
+# the strength of a comment is not a trade worth making; if a future
+# kpreadwrite/kpgather turns out to need it, it will show up as a denial.

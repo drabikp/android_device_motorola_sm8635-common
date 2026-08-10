@@ -13,3 +13,47 @@ ro.vendor.hw.                   u:object_r:vendor_mot_hw_prop:s0
 vendor.hw.                      u:object_r:vendor_mot_hw_prop:s0
 ro.vendor.product.              u:object_r:vendor_mot_product_prop:s0
 ro.vendor.mot.gki.              u:object_r:vendor_mot_init_prop:s0
+
+# --- Motorola properties set by the 15 /vendor/bin services ported here. ---
+#
+# ro.vendor.mot.hw.  is stock's (vendor_property_contexts:438); it is what
+# init.mmi.boot.sh writes ro.vendor.mot.hw.rkp_csr_uploaded into and what
+# hardware_revisions.sh / init.mmi.touch.sh read ro.vendor.mot.hw.lid out of.
+# It is LONGER than our ro.vendor.mot.gki. entry only in the sense of being a
+# sibling -- the two prefixes do not overlap, so both apply.
+ro.vendor.mot.hw.               u:object_r:vendor_mot_hw_prop:s0
+
+# Set by /vendor/bin/init.mmi.boot.sh (see mmi_boot.te). All of these were
+# falling through to vendor_default_prop, which a vendor domain is neverallowed
+# to write, so each one needs a label the domain holds `set` on.
+#   ro.vendor.bootreason      "coldboot" after a kpanic/wdt, else the
+#                             "Last boot reason" line out of /proc/bootinfo
+#   ro.vendor.boot_seq        the BOOT_SEQ counter from /proc/bootinfo
+#   ro.vendor.manufacturedate the Last-Test-Station stamp decoded from FTI
+#   ro.vendor.mot.iccid       from UTAG /proc/config/iccid
+#   ro.vendor.mot.cust_md5    from UTAG /proc/config/cust_md5
+# persist.vendor.boot.bootseq.history is stock's vendor_mot_boot_prop; it is
+# folded into vendor_mot_init_prop here rather than dragging in a type whose
+# other members (ro.boot.*) must NOT be relabelled -- see property.te.
+ro.vendor.bootreason            u:object_r:vendor_mot_init_prop:s0
+ro.vendor.boot_seq              u:object_r:vendor_mot_init_prop:s0
+ro.vendor.manufacturedate       u:object_r:vendor_mot_init_prop:s0
+ro.vendor.mot.iccid             u:object_r:vendor_mot_init_prop:s0
+ro.vendor.mot.cust_md5          u:object_r:vendor_mot_init_prop:s0
+persist.vendor.boot.bootseq.history  u:object_r:vendor_mot_init_prop:s0
+
+# Set by /vendor/bin/init.mmi.attest_model.sh on first boot and whenever the
+# programmed model fails a TEE attestation check (see mmi_attest_chk.te).
+persist.vendor.mot.model_for_attestation  u:object_r:vendor_mot_init_prop:s0
+
+# Set by /vendor/bin/init.mmi.usb.sh -- tcmd_ctrl_adb() and the "mot-factory"
+# bootmode branch. Stock: vendor_property_contexts:406.
+persist.vendor.factory          u:object_r:vendor_mot_factory_prop:s0
+
+# Set by /vendor/bin/init.mmi.touch.sh. Stock: vendor_property_contexts:506-507.
+persist.vendor.touch.           u:object_r:vendor_mot_touchscreen_prop:s0
+ro.vendor.touch.                u:object_r:vendor_mot_touchscreen_prop:s0
+
+# The face HAL's control namespace. vendor.faceauth.cli.lidstate is the fold
+# state the cover-display camera path keys off; the bare prefix covers it.
+vendor.faceauth.                u:object_r:vendor_tetras_prop:s0

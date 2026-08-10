@@ -26,7 +26,7 @@ vendor_restricted_prop(vendor_mot_init_prop)
 # READ ACCESS HAS TO BE GRANTED BACK EXPLICITLY. This is the trap in the macro:
 # `restricted` and `internal` only emit NEVERALLOWs, they grant nothing. Before
 # the relabel every one of these properties fell through to vendor_default_prop,
-# and system/sepolicy/private/domain.te:509 hands that one out for free:
+# and system/sepolicy/private/domain.te:508 hands that one out for free:
 #
 #   compatible_property_only(`
 #       get_prop({domain -coredomain -appdomain}, vendor_default_prop)
@@ -49,3 +49,100 @@ get_prop({ domain -coredomain -appdomain }, vendor_mot_init_prop)
 get_prop({ system_server zygote surfaceflinger bootanim shell dumpstate }, vendor_mot_hw_prop)
 get_prop({ platform_app priv_app system_app }, vendor_mot_hw_prop)
 get_prop({ surfaceflinger dumpstate }, vendor_mot_init_prop)
+
+# ---------------------------------------------------------------------------
+# Two more Motorola property namespaces, for init.mmi.usb.sh and
+# init.mmi.touch.sh. The same trap as above applies and is the reason the list
+# is this short: every prefix moved off the default label loses the blanket
+# read from system/sepolicy/private/domain.te:508, so a new type is only worth
+# creating when a NEW VENDOR DOMAIN HAS TO *SET* the property -- reads are free
+# through vendor_default_prop and need nothing.
+#
+# That test is what kept the following stock types OUT of this tree:
+#   vendor_mot_boot_prop            ro.boot.* is bootloader_prop in AOSP and is
+#                                   read by half the system; relabelling it
+#                                   would be a self-inflicted outage. Nothing
+#                                   here sets ro.boot.*, only reads it, so
+#                                   get_prop(<domain>, bootloader_prop) is the
+#                                   correct port. ro.vendor.boot.* is only read
+#                                   too (init.mmi.usb.sh: ro.vendor.boot.cid;
+#                                   init.mmi.attest_model.sh:
+#                                   ro.vendor.boot.serialno) and stays default.
+#   vendor_mot_hw_boardversion_prop ro.vendor.hw.boardversion is already covered
+#                                   by our ro.vendor.hw. -> vendor_mot_hw_prop
+#                                   entry, and mmi_boot holds set on that type
+#                                   anyway. Splitting it out would buy nothing.
+#   vendor_mot_tcmd_prop,           init.mmi.usb.sh only READS vendor.tcmd.* and
+#   vendor_mot_tcmd_ctrl_adb_prop   vendor.tcmd.ctrl_adb.
+#   vendor_mot_spu_prop             mbm_spy only READS vendor.spu.*.
+#   moto_battinfo_prop              a *system*-partition type in stock (it is in
+#                                   the system_property_type set, not in
+#                                   vendor_property_contexts), so we cannot even
+#                                   tell which property it labels. batt_health
+#                                   reads it; that read stays on the default
+#                                   label.
+
+# persist.vendor.factory.allow_adb -- init.mmi.usb.sh's tcmd_ctrl_adb() writes
+# it when vendor.tcmd.ctrl_adb flips, and reads it back in the "mot-factory"
+# bootmode branch. Stock's only two rules on this type are init_usb's own
+# get and set, so there is no other reader to preserve.
+vendor_restricted_prop(vendor_mot_factory_prop)
+
+# ro.vendor.touch.* and persist.vendor.touch.* -- init.mmi.touch.sh sets
+# ro.vendor.touch.fw_version and ro.vendor.touch.supplier_vendor per panel, and
+# persist.vendor.touch.calibration after a forced calibration. Stock grants this
+# type to init_touch and to tcmd; tcmd has no domain in this tree.
+vendor_restricted_prop(vendor_mot_touchscreen_prop)
+
+# READ ACCESS GRANTED BACK, for the same reason as the block above: before the
+# relabel both prefixes fell through to vendor_default_prop, which
+# domain.te:508 hands to every non-core, non-app domain for free
+# (PRODUCT_SHIPPING_API_LEVEL 34 selects the compatible_property_only branch).
+# These grants restore exactly that and nothing more -- neither prefix has a
+# coredomain reader today, so no core grant is added.
+get_prop({ domain -coredomain -appdomain }, vendor_mot_factory_prop)
+get_prop({ domain -coredomain -appdomain }, vendor_mot_touchscreen_prop)
+
+# vendor.faceauth.* -- set by the Tetras face HAL. Same test as above: it earns a
+# type because a vendor domain has to SET it, not merely read it. Stock's name,
+# from its vendor_property_contexts:676-677.
+vendor_restricted_prop(vendor_tetras_prop)
+get_prop({ domain -coredomain -appdomain }, vendor_tetras_prop)
+
+# ---------------------------------------------------------------------------
+# vendor_init MUST KEEP `set` ON EVERY PREFIX WE RELABELLED. This is the same
+# trap as the read grants above, in the opposite direction, and it was a REAL
+# REGRESSION introduced by the first version of this policy.
+#
+# /vendor/etc/init/hw/init.mmi.rc runs `setprop` inside `on early-init`, and a
+# vendor rc executes as vendor_init, not init. Those five lines:
+#
+#   setprop ro.vendor.hw.device   ${ro.boot.device}
+#   setprop ro.vendor.hw.hwrev    ${ro.boot.hwrev}
+#   setprop ro.vendor.hw.modelno  ${ro.boot.modelno}
+#   setprop ro.vendor.hw.revision ${ro.boot.revision}
+#   setprop ro.vendor.hw.nav_keys ${ro.boot.nav_keys}
+#
+# worked while ro.vendor.hw.* fell through to vendor_default_prop, because
+# vendor_init holds set on that. Moving the prefix to a type of our own silently
+# turned all five into no-ops: measured on the flashed image,
+# ro.vendor.hw.device/.hwrev/.revision/.modelno/.nav_keys were all EMPTY while
+# their ro.boot.* sources were populated (arcfox, 0xC100, pvt1).
+#
+# It is invisible in logcat: early-init runs before logd and auditd exist, so the
+# denials go only to kmsg, whose ring buffer has wrapped by the time anything can
+# read it. Do not look for an AVC to confirm this class of bug -- compare the
+# property values instead.
+#
+# This is not cosmetic. rmt_storage's Motorola mot_open_gzfsg() composes the FSG
+# image name from ro.vendor.hw.device + ro.vendor.hw.revision, so with them empty
+# it falls back to the generic /vendor/fsg/0.img.gz stub (12 KB) instead of this
+# unit's /vendor/fsg/arcfoxpvt1_dsds_row.img.gz (574 KB) -- i.e. the modem was
+# being handed a stub FSG. See the telephony notes in HANDOFF-NEXT.
+#
+# Stock grants vendor_init set on all three (vendor_sepolicy.cil:13318 and
+# neighbours, 44 vendor prop types in total).
+set_prop(vendor_init, vendor_mot_hw_prop)
+set_prop(vendor_init, vendor_mot_product_prop)
+set_prop(vendor_init, vendor_mot_init_prop)
+set_prop(vendor_init, vendor_tetras_prop)

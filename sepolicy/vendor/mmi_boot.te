@@ -1,0 +1,97 @@
+# mmi_boot -- /vendor/bin/init.mmi.boot.sh, started as `vendor.mmi-boot-sh`
+# (init.mmi.rc:498, class core, user root, oneshot).
+#
+# This is the second half of the UTAG story that init_hw.te started. Where
+# init.oem.hw.sh loads the store and derives ro.vendor.hw.*, this script is what
+# reads the per-unit FACTORY TEST INTERFACE record out of it and turns it into
+# the values the rest of the system quotes:
+#
+#   ro.vendor.hw.revision       decoded from /proc/cpuinfo "Revision"
+#   ro.vendor.hw.boardversion   FTI bytes 35..38
+#   ro.vendor.manufacturedate   FTI bytes 63..65, as month/day/20yy
+#   ro.vendor.mot.iccid         UTAG /proc/config/iccid
+#   ro.vendor.mot.cust_md5      UTAG /proc/config/cust_md5
+#   ro.vendor.bootreason        "coldboot" after a panic, else the "Last boot
+#                               reason" line of /proc/bootinfo
+#   ro.vendor.boot_seq          the BOOT_SEQ counter from /proc/bootinfo
+#   persist.vendor.boot.bootseq.history
+#   ro.vendor.mot.hw.rkp_csr_uploaded
+#
+# It ALSO repairs the store: if /proc/config/fti is missing or its checksum
+# disagrees with /mnt/vendor/persist/factory/fti it creates the UTAG and copies
+# the persist copy back into it. That write is why this domain needs the utags
+# partition and not just the procfs -- see below.
+
+type mmi_boot, domain;
+type mmi_boot_exec, exec_type, vendor_file_type, file_type;
+
+init_daemon_domain(mmi_boot)
+
+# #!/vendor/bin/sh, and PATH=/sbin:/vendor/sbin:/vendor/bin:/vendor/xbin, so
+# cat/grep/sed/od/printf/date are all vendor toolbox applets. /vendor/bin/sh is
+# u:object_r:vendor_shell_exec:s0 on this device (checked with ls -Z).
+allow mmi_boot vendor_shell_exec:file rx_file_perms;
+allow mmi_boot vendor_toolbox_exec:file rx_file_perms;
+allow mmi_boot vendor_file:file execute_no_trans;
+
+# notice() writes every step to /dev/kmsg.
+allow mmi_boot kmsg_device:chr_file rw_file_perms;
+
+# /proc/config -- the UTAG procfs, proc_hwconf (declared in file.te, labelled in
+# genfs_contexts). The script reads */ascii and */raw, writes */raw, writes "1"
+# to */reload and creates the fti tag via /proc/config/all/new.
+allow mmi_boot proc_hwconf:dir search;
+allow mmi_boot proc_hwconf:file rw_file_perms;
+
+# The utags partition itself. STOCK PARITY, and the reasoning is an inference
+# rather than a measurement: the driver's *load* path runs in a workqueue as
+# u:r:kernel:s0 (that is what kernel.te documents), but its *store* path runs
+# synchronously in the writing process, so `cat $pds_fti > /proc/config/fti/raw`
+# should hit the block device as mmi_boot. Stock carries exactly this rule pair
+# and nothing else in the script opens a block device, which is consistent.
+allow mmi_boot block_device:dir search;
+allow mmi_boot utags_block_device:blk_file rw_file_perms;
+
+# /proc/cpuinfo (hw revision), /proc/bootinfo (BOOT_SEQ, Last boot reason) and
+# /proc/cmdline (the "@:" debug key/value pairs, non-release builds only).
+#
+# NOT DECLARED: proc_bootinfo. Stock has a type for /proc/bootinfo and a
+# genfscon for it, but stock ALSO grants mmi_boot plain `proc:file read`, which
+# already covers /proc/bootinfo -- it is u:object_r:proc:s0 on this device.
+# Splitting it out would only take the file away from every other domain that
+# reads it as proc today, and buy this domain nothing.
+allow mmi_boot proc:dir r_dir_perms;
+allow mmi_boot proc:file r_file_perms;
+allow mmi_boot proc:lnk_file r_file_perms;
+allow mmi_boot proc_cmdline:file r_file_perms;
+
+# STOCK PARITY: write on plain proc. Nothing in the script writes a proc file
+# outside /proc/config (which is proc_hwconf), so this is kept only because
+# stock has it and the "@:" cmdline branch can invoke arbitrary commands on
+# non-release builds. It is the one rule here that is not tied to an observed
+# access.
+allow mmi_boot proc:file write;
+
+# /mnt/vendor/persist/factory/fti (the golden FTI copy) and
+# /mnt/vendor/persist/rkp_complete (existence test only). Both are
+# u:object_r:mnt_vendor_file:s0 on the device -- checked with ls -Z -- which is
+# why stock's persist_factory_file type is not ported; see file_contexts.
+allow mmi_boot mnt_vendor_file:dir r_dir_perms;
+allow mmi_boot mnt_vendor_file:file r_file_perms;
+allow mmi_boot mnt_vendor_file:lnk_file r_file_perms;
+allow mmi_boot vendor_persist_file:file getattr;
+
+# Properties. ro.vendor.hw.* and ro.vendor.mot.hw.* are vendor_mot_hw_prop;
+# ro.vendor.bootreason, ro.vendor.boot_seq, ro.vendor.manufacturedate,
+# ro.vendor.mot.iccid, ro.vendor.mot.cust_md5 and
+# persist.vendor.boot.bootseq.history are vendor_mot_init_prop. See
+# property_contexts for the mapping and property.te for why the read had to be
+# granted back to everyone else.
+set_prop(mmi_boot, vendor_mot_hw_prop)
+set_prop(mmi_boot, vendor_mot_init_prop)
+
+# ro.build.tags gates the /proc/cmdline "@:" branch; ro.vendor.hw.device (from
+# init.oem.hw.sh) is compared against the programmed model to clear a stale one;
+# ro.boot.last_powerup_reason decides coldboot vs. the /proc/bootinfo reason.
+get_prop(mmi_boot, build_prop)
+get_prop(mmi_boot, bootloader_prop)

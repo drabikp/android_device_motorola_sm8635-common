@@ -1,0 +1,55 @@
+# qclicense_copy -- /vendor/bin/copy_qc_cert.sh, started as
+# `vendor.copy_qc_cert` (init.mmi.overlay.rc:169, class main, user system,
+# group root/system, oneshot, disabled + triggered at :30).
+#
+# Installs three Qualcomm PFM licence blobs into persist on first boot and
+# re-installs them whenever the shipped copy's md5 stops matching the installed
+# one:
+#
+#   /vendor/etc/qcom_widevine_licenses.pfm        -> .../licenses/  (DRM L1)
+#   /vendor/etc/qcom_smart_transmit_licenses.pfm  -> .../licenses/  (SAR/antenna)
+#   .../licenses/898-898-no-exp-2574099444.pfm.inst renamed into place  (GNSS)
+#
+# all under /mnt/vendor/persist/data/pfm/licenses, with .wv_copy_done /
+# .gps_copy_done / .smart_transmit_copy_done marker files and an fsync of each.
+# Without it, Widevine L1 provisioning has no licence to find.
+
+type qclicense_copy, domain;
+type qclicense_copy_exec, exec_type, vendor_file_type, file_type;
+
+init_daemon_domain(qclicense_copy)
+
+# BEYOND STOCK PARITY: vendor_shell_exec. Stock's qclicense_copy has no rule for
+# it, yet the script is #!/vendor/bin/sh and /vendor/bin/sh is
+# u:object_r:vendor_shell_exec:s0 on this device (ls -Z). Same omission as
+# init_capsensor; granted rather than reproduced.
+allow qclicense_copy vendor_shell_exec:file rx_file_perms;
+
+# cp, mv, rm, cat, md5sum, cut and fsync are all vendor toolbox applets.
+allow qclicense_copy vendor_toolbox_exec:file rx_file_perms;
+
+# notice() to /dev/kmsg.
+allow qclicense_copy kmsg_device:chr_file rw_file_perms;
+
+# /mnt/vendor/persist/data -- QCOM's vendor_persist_data_file, already declared
+# in sepolicy_vndr and already applied on the device (ls -Zd confirms
+# /mnt/vendor/persist/data is u:object_r:vendor_persist_data_file:s0). No new
+# type needed.
+allow qclicense_copy vendor_persist_data_file:dir rw_dir_perms;
+allow qclicense_copy vendor_persist_data_file:file create_file_perms;
+
+# BEYOND STOCK PARITY, and this one is load-bearing: the source blobs are
+# /vendor/etc/qcom_*_licenses.pfm, which are u:object_r:vendor_configs_file:s0
+# (checked with ls -Z). Stock grants qclicense_copy no vendor_configs_file
+# access at all, which would make every `cp $WV_SRC $WV_DEST` in the script
+# fail. Without this rule porting the domain would only convert a
+# "no domain transition" failure into a silent copy failure.
+allow qclicense_copy vendor_configs_file:dir search;
+allow qclicense_copy vendor_configs_file:file r_file_perms;
+
+# Both this domain and mot_flip_count write under /mnt/vendor/persist but were
+# granted only the leaf type, not `search` on the parent directory -- so they would
+# have failed on the traversal, not on the file. (qclicense_copy writes
+# /mnt/vendor/persist/data/pfm/licenses/*, mot_flip_count writes
+# /mnt/vendor/persist/sensors/mot_flip_count.)
+allow qclicense_copy mnt_vendor_file:dir search;

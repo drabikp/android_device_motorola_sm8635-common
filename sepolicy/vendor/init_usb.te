@@ -1,0 +1,72 @@
+# init_usb -- /vendor/bin/init.mmi.usb.sh, started as `vendor.mmi-usb-sh`
+# (init.mmi.usb.rc:271, class late_start, user root, oneshot) and re-run on
+# demand with vendor.usb.mmi-usb-sh.action=vendor.tcmd.ctrl_adb.
+#
+# This is the script that decides what the USB gadget enumerates as. For
+# ro.board.platform=pineapple it waits up to 20s for /sys/class/udc/<controller>
+# to appear, then picks a persist.vendor.usb.config from ro.bootmode:
+#
+#   bp-tools     diag,serial,rmnet[,adb]
+#   mot-factory  diag,usbnet[,adb]        (+ disables host-mode LPM)
+#   qcom         diag,serial_cdev,rmnet,dpl,qdss[,adb]
+#   normal       mtp / adb, and on user builds holds the gadget in
+#                "secure mode" until vendor.boot_completed=1
+#
+# With the script unable to run, none of persist.vendor.usb.config,
+# vendor.usb.controller or the diag function names were ever set.
+
+type init_usb, domain;
+type init_usb_exec, exec_type, vendor_file_type, file_type;
+
+init_daemon_domain(init_usb)
+
+allow init_usb vendor_shell_exec:file rx_file_perms;
+allow init_usb vendor_toolbox_exec:file rx_file_perms;
+
+# log_info() to /dev/kmsg.
+allow init_usb kmsg_device:chr_file rw_file_perms;
+
+# /sys/class/udc/<controller> (the wait), /sys/class/android_usb/android0/secure
+# (the legacy secure-mode toggle) and
+# /sys/module/dwc3_msm/parameters/disable_host_mode_pm (mot-factory only).
+# sysfs_android_usb is AOSP's own type and already exists in this tree.
+allow init_usb sysfs:dir r_dir_perms;
+allow init_usb sysfs:file rw_file_perms;
+allow init_usb sysfs_android_usb:dir search;
+allow init_usb sysfs_android_usb:file rw_file_perms;
+allow init_usb self:capability { chown fowner };
+
+# /config/usb_gadget/g1 -- the msm8953 branch tests for it. Dead on pineapple,
+# kept at stock parity because it costs a search and an open on a filesystem
+# this domain can already reach nothing else in.
+allow init_usb configfs:dir search;
+allow init_usb configfs:file { open write append lock map };
+
+# Properties.
+#   persist.vendor.usb.*, vendor.usb.*          vendor_usb_prop (QCOM's, already
+#                                               in this tree -- the prefixes
+#                                               vendor.usb. and persist.vendor.usb.
+#                                               are in
+#                                               sepolicy_vndr/sm8650/generic/vendor/
+#                                               common/property_contexts)
+#   persist.vendor.factory.allow_adb            vendor_mot_factory_prop (new)
+#   persist.vendor.radio.usbdiag                vendor_radio_prop (QCOM's)
+#   ro.boot.*, ro.bootmode                      bootloader_prop
+#   ro.build.type, ro.debuggable                build_prop
+set_prop(init_usb, vendor_usb_prop)
+set_prop(init_usb, vendor_mot_factory_prop)
+get_prop(init_usb, vendor_radio_prop)
+get_prop(init_usb, bootloader_prop)
+get_prop(init_usb, build_prop)
+
+# NOT PORTED, because the read is already free: vendor.tcmd.ctrl_adb
+# (vendor_mot_tcmd_ctrl_adb_prop), vendor.tcmd.* (vendor_mot_tcmd_prop),
+# ro.vendor.boot.cid and persist.vendor.mot.usb.config (vendor_mot_boot_prop /
+# vendor_mot_init_prop on stock). All four are only READ here, and they fall
+# through to vendor_default_prop, which system/sepolicy/private/domain.te:508
+# hands to every non-core non-app domain. Relabelling them would cost the read
+# and give nothing back -- see the long note in property.te.
+#
+# ALSO NOT PORTED: set on vendor_mot_init_prop. Stock's init_usb has it, but the
+# only ro.vendor.mot.* the script touches is persist.vendor.mot.usb.config and
+# it only reads it.
