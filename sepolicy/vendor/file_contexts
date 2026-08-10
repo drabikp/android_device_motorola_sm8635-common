@@ -46,3 +46,51 @@
 # argument rather than a proven denial; if it still aborts, check whether those
 # als_* files exist under /mnt/vendor/persist/sensors at all.
 /(vendor|system/vendor)/bin/hw/motorola\.hardware\.sensorext-service  u:object_r:hal_graphics_composer_default_exec:s0
+
+# MODEM EFS / FSG BLOCK DEVICES -- the RF calibration path.
+#
+# Every partition on this device fell through to the generic u:object_r:
+# block_device:s0, so rmt_storage (which serves the modem's EFS over QMI) was
+# denied its own storage:
+#
+#   avc: denied { read write } for comm="rmt_storage" name="sdd18"
+#        scontext=u:r:vendor_rmt_storage:s0 tcontext=u:object_r:block_device:s0
+#
+# sdd18 is fsg. The consequence is not a log nuisance: with no EFS the modem has
+# no RF calibration and REFUSES TO POWER THE RADIO ON, so there is no signal, no
+# SIM, no SMS and no mobile data:
+#
+#   RILJ: RADIO_POWER error 71
+#   CommandException: NO_RF_CALIBRATION_INFO
+#   AnomalyReporter: "No RF calibration data"
+#
+# vendor_rmt_storage is already allowed rw on vendor_modem_efs_partition_device
+# (sepolicy_vndr/legacy-um/generic/vendor/common/rmt_storage.te:51), so labelling
+# is all that is needed. Paths and types taken verbatim from stock's
+# /vendor/etc/selinux/vendor_file_contexts for the 1d84000.ufshc controller.
+#
+# THE SLOT-SUFFIXED PARTITIONS TAKE A DIFFERENT TYPE. This is the trap: stock
+# carries BOTH an unsuffixed `fsg` entry AND an `fsg_[ab]` entry, and they are
+# NOT the same type --
+#   fsg        vendor_modem_efs_partition_device   (raw EFS, served by rmt_storage)
+#   fsg_[ab]   vendor_modem_block_device           (an ext4 filesystem Android mounts)
+# Labelling fsg_a as modem_efs (which this file did on the first attempt) denies
+# e2fsck, and the boot log shows fs_mgr find the filesystem unclean, unmount it
+# for a check, and the check fail:
+#   e2fsck: Permission denied while trying to open .../by-name/fsg_a
+# The whole set below is taken verbatim from stock's own vendor_file_contexts for
+# this controller rather than extrapolated -- extrapolating the suffix is exactly
+# what got it wrong.
+#
+# modemst1, modemst2 and fsc are genuinely not slot-specific and keep the EFS
+# type. Verified live: with these, rmt_storage's denial disappears and it serves
+# /boot/modem_fs1 and /boot/modem_fs2 from a cold boot with zero denials.
+/dev/block/platform/soc/1d84000\.ufshc/by-name/modemst1        u:object_r:vendor_modem_efs_partition_device:s0
+/dev/block/platform/soc/1d84000\.ufshc/by-name/modemst2        u:object_r:vendor_modem_efs_partition_device:s0
+/dev/block/platform/soc/1d84000\.ufshc/by-name/fsc             u:object_r:vendor_modem_efs_partition_device:s0
+/dev/block/platform/soc/1d84000\.ufshc/by-name/fsg             u:object_r:vendor_modem_efs_partition_device:s0
+/dev/block/platform/soc/1d84000\.ufshc/by-name/fsg_[ab]        u:object_r:vendor_modem_block_device:s0
+/dev/block/platform/soc/1d84000\.ufshc/by-name/modem_[ab]      u:object_r:vendor_modem_block_device:s0
+/dev/block/platform/soc/1d84000\.ufshc/by-name/bluetooth_[ab]  u:object_r:vendor_modem_block_device:s0
+/dev/block/platform/soc/1d84000\.ufshc/by-name/ssd             u:object_r:vendor_ssd_block_device:s0
+/dev/block/platform/soc/1d84000\.ufshc/by-name/persist         u:object_r:vendor_persist_block_device:s0

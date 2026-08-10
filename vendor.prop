@@ -564,3 +564,42 @@ wifi.aware.interface=wifi-aware0
 sys.usb.configfs=1
 sys.usb.controller=a600000.dwc3
 persist.vendor.usb.config=adb
+
+# FSG id, for the modem's RF calibration.
+#
+# rmt_storage on this device is Motorola's, not stock QTI: it carries a
+# mot_open_gzfsg path that serves the modem's FSG (factory/RF data) out of
+# GZIPPED images under /vendor/fsg, selected by ro.vendor.fsg-id --
+#   strings /vendor/bin/rmt_storage:
+#     ro.vendor.fsg-id       %s/fsg/%s.img.gz
+#     mot_open_gzfsg         open_gzfsg: b_factory=%d, b_device=%d, b_carrier=%d
+# With the property empty it never registers the FSG at all, so the modem has no
+# RF calibration and RADIO_POWER returns error 71 NO_RF_CALIBRATION_INFO.
+#
+# Stock sets it in init.mmi.rc as `setprop ro.vendor.fsg-id ${ro.boot.fsg-id}`,
+# immediately after `exec_start vendor.oem-hw-sh`. DO NOT conclude from that
+# adjacency that the unlabelled init.oem.hw.sh is the cause -- it was checked and
+# it is not. That script never touches fsg-id (it only setprops
+# ro.vendor.hw.super_image_failure and ro.vendor.mot.gki.path), and
+# ro.boot.fsg-id would come from the bootloader, which on this unit does not
+# supply it: /proc/cmdline carries no androidboot.* at all and all 35 bootconfig
+# entries were enumerated with no fsg-id among them.
+#
+# So stock almost certainly maps an EMPTY value here too, and this line is NOT
+# stock parity -- it is a deliberate override. Justification is empirical rather
+# than parity: with it set, rmt_storage registers the FSG; without it, it does
+# not.
+#
+# 0 is not a guess: /vendor/fsg contains exactly one .img.gz, 0.img.gz, next to
+# the per-carrier .mbn files, and it is what the single-component
+# "%s/fsg/%s.img.gz" pattern resolves against.
+#
+# Verified live: with this set, rmt_storage logs
+#   "Registering fsg: 0x58 /boot/modem_fsg"
+# which it never does otherwise. NOT yet sufficient on its own -- see
+# HANDOFF-NEXT.md; the radio still needs a cold boot with this and the block
+# device labels in place from the start.
+#
+# Properly fixing init.oem.hw.sh's label would set this AND every other
+# ro.boot.hw.* in one go, and is the better long-term fix.
+ro.vendor.fsg-id=0
