@@ -94,3 +94,26 @@
 /dev/block/platform/soc/1d84000\.ufshc/by-name/bluetooth_[ab]  u:object_r:vendor_modem_block_device:s0
 /dev/block/platform/soc/1d84000\.ufshc/by-name/ssd             u:object_r:vendor_ssd_block_device:s0
 /dev/block/platform/soc/1d84000\.ufshc/by-name/persist         u:object_r:vendor_persist_block_device:s0
+
+
+# MOTOROLA UTAG FACTORY DATA -- the ro.vendor.hw.* / ro.vendor.product.* family.
+#
+# /vendor/bin/init.oem.hw.sh is what loads the UTAG store and derives those
+# properties. It was labelled vendor_file, so init refused to exec it at
+# early-init:
+#
+#   Could not start service: File /vendor/bin/init.oem.hw.sh
+#   (labeled "u:object_r:vendor_file:s0") has incorrect label or no domain
+#   transition from u:r:init:s0 to another SELinux domain defined.
+#
+# and /proc/hw held nothing but `all` and `reload` all the way to boot_completed.
+# Type and path are stock's (vendor_file_contexts line 84); see init_hw.te.
+/(vendor|system/vendor)/bin/init\.oem\.hw\.sh                   u:object_r:init_hw_exec:s0
+
+# The partitions behind that store. ueventd applies the by-name label to the
+# underlying node, which is what the driver's blkdev_get_by_path() ends up
+# checking -- see kernel.te for the kretprobe that proved the -EACCES. Types and
+# paths are stock's (vendor_file_contexts lines 863, 878, 929).
+/dev/block/platform/soc/1d84000\.ufshc/by-name/hw               u:object_r:hw_block_device:s0
+/dev/block/platform/soc/1d84000\.ufshc/by-name/utags            u:object_r:utags_block_device:s0
+/dev/block/platform/soc/1d84000\.ufshc/by-name/utagsBackup      u:object_r:utags_block_device:s0

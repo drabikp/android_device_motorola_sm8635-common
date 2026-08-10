@@ -1,0 +1,168 @@
+# init_hw -- the domain for /vendor/bin/init.oem.hw.sh, Motorola's UTAG bring-up
+# script. Ported from stock's own policy (see
+# /vendor/etc/selinux/vendor_sepolicy.cil, the ~60 rules whose source or target
+# is init_hw).
+#
+# WHY THIS MATTERS. UTAGs are this device's factory-data store: a raw key/value
+# blob on the `hw` and `utags` partitions holding the per-unit and per-SKU
+# values -- RF banding, carrier, SKU, IMEI, eSIM id, panel colour, sensor
+# presence, the lot. `utags.ko` exposes them at /proc/hw and /proc/config, and
+# init.oem.hw.sh is what triggers the load and then derives the whole
+# ro.vendor.hw.* / ro.vendor.product.* family from them.
+#
+# On this ROM none of that happened. init logged, at early-init:
+#
+#   Could not start service: File /vendor/bin/init.oem.hw.sh
+#   (labeled "u:object_r:vendor_file:s0") has incorrect label or no domain
+#   transition from u:r:init:s0 to another SELinux domain defined.
+#
+# so /proc/hw and /proc/config held nothing but `all` and `reload`, and the only
+# ro.vendor.hw.* values on the device were the handful we hardcode ourselves in
+# vendor.prop. (init.mmi.rc IS parsed and its early-init block DOES run -- it is
+# byte-identical to stock and ro.vendor.mot.factory=false proves it executed --
+# so the exec_start is reached and only the label stops it.)
+#
+# It is not alone: a whole family of Motorola /vendor/bin services fails the same
+# way and still needs domains of its own. How many you see depends on the boot,
+# because several are property-triggered -- one boot's log showed 6 distinct
+# binaries (batt_health, capsense_reset, diagcommd, init.mmi.wls.sh, mbm_spy,
+# mot_flip_count), another showed 17 including init.mmi.boot.sh and
+# hardware_revisions.sh. init.mmi.rc defines 32 services in total.
+#
+# NOTE this is only half the fix. Even once the script runs, the utags driver
+# itself could not reach its backing store -- see kernel.te.
+
+type init_hw, domain;
+type init_hw_exec, exec_type, vendor_file_type, file_type;
+
+# init execs it at early-init via `exec_start vendor.oem-hw-sh`
+# (/vendor/etc/init/hw/init.mmi.rc). Stock spells this out longhand:
+#   (allow init_34_0 init_hw_exec (file (read getattr map execute open)))
+#   (typetransition init_34_0 init_hw_exec process init_hw)
+#   (allow init_hw init_hw_exec (file (... entrypoint)))
+# which is exactly what init_daemon_domain() emits.
+init_daemon_domain(init_hw)
+
+# The script is #!/vendor/bin/sh and every command it runs -- cat, find, sed,
+# basename, sleep, getprop, setprop, insmod -- is a vendor toolbox applet,
+# because it sets PATH=/sbin:/vendor/sbin:/vendor/bin:/vendor/xbin and never
+# sees /system/bin.
+allow init_hw vendor_shell_exec:file rx_file_perms;
+allow init_hw vendor_toolbox_exec:file rx_file_perms;
+
+# /vendor/bin/motobox (the `expat` XML parser the script drives to read
+# /vendor/etc/vhw.xml) is plain vendor_file, and so is utags.ko. Stock grants
+# execute_no_trans on vendor_file for the same reason.
+allow init_hw vendor_file:file execute_no_trans;
+
+# notice() writes progress to /dev/kmsg. This is how the script's own failures
+# become visible in dmesg, so it is worth having rather than dropping.
+allow init_hw kmsg_device:chr_file rw_file_perms;
+
+# /proc/hw and /proc/config: the UTAG procfs. The script writes "1" to
+# */reload to force a load, creates tags via */all/new, and reads/writes
+# */<tag>/ascii. See genfs_contexts for the proc_hwconf labelling.
+allow init_hw proc_hwconf:dir r_dir_perms;
+allow init_hw proc_hwconf:file create_file_perms;
+
+# NOT GRANTED: proc_bootconfig. Stock's init_hw carries a pair of rules for it,
+# but the script never opens /proc/bootconfig -- every boot-time value it wants
+# comes through getprop, which is why get_prop(init_hw, bootloader_prop) below is
+# the rule that actually matters. (Stock's dir rule could not fire anyway;
+# /proc/bootconfig is a file, not a directory.)
+
+# /mnt/vendor/persist and /oem/oem.prop: prefetch_from_file() consults
+# /oem/oem.prop for OEM overrides of the appended product properties.
+allow init_hw mnt_vendor_file:dir r_dir_perms;
+allow init_hw mnt_vendor_file:file r_file_perms;
+allow init_hw oemfs:dir r_dir_perms;
+allow init_hw oemfs:file r_file_perms;
+
+# prefetch_from_file() also falls back to /system/build.prop when a property is
+# unset. Stock grants the directory only, not the file, so the read itself is
+# expected to be denied there; keep stock parity rather than widening it, since
+# the fallback only fires for properties the build already sets.
+allow init_hw system_file:dir r_dir_perms;
+
+# STOCK PARITY ONLY -- and this is the broadest grant in the file, so be honest
+# about it. The script loads the UTAG driver itself when it is a DLKM:
+#   [ -f /vendor/lib/modules/utags.ko ] && insmod /vendor/lib/modules/utags.ko
+# On our build modprobe has already loaded it, so the insmod fails with EEXIST.
+# It would ALSO fail with EPERM without these rules, and the script's error
+# handling cannot tell the two apart -- either way it falls through to the
+# `find ... -name "*-gki"` branch and ends at ro.vendor.mot.gki.path=".", which is
+# exactly the value observed on the device. So these rules change nothing
+# measurable today; they are here so the DLKM path works if modprobe ever stops
+# loading utags.ko first. Combined with vendor_file:file execute_no_trans above,
+# they let a shell-script domain exec any vendor binary and load any vendor .ko.
+allow init_hw self:capability sys_module;
+allow init_hw vendor_file:system module_load;
+allow init_hw kernel:key search;
+
+# super_image_detection() (the -M invocation) probes /vendor/fsg and
+# /vendor/firmware_mnt for a multi-variant "super" modem image. arcfox does not
+# ship one -- /vendor/fsg holds the carrier .mbn files directly and there is no
+# super_modem marker -- but the probe still stats those trees.
+allow init_hw fsg_file:dir r_dir_perms;
+allow init_hw fsg_file:file r_file_perms;
+allow init_hw fsg_file:lnk_file r_file_perms;
+allow init_hw firmware_file:dir r_dir_perms;
+allow init_hw firmware_file:file r_file_perms;
+allow init_hw firmware_file:lnk_file r_file_perms;
+
+# Properties the script SETS. NOTE the prefix is DATA-DRIVEN, not fixed:
+# set_ro_hw_property() does `prop_prefix=$(cat $hwtag/ascii)`, i.e. the property
+# name comes out of the UTAG's own .system payload. The list below is what this
+# unit's UTAGs and this vhw.xml actually produce -- measured, not guaranteed.
+# Stock's init_hw additionally holds set on vendor_mot_var_prop,
+# vendor_hw_gabutton_prop, vendor_audio_prop, vendor_display_prop and
+# vendor_camera_prop for units whose .system payloads name those namespaces;
+# arcfox's do not, so they are omitted rather than declared as dead types.
+#   ro.vendor.hw.<utag>          for every UTAG carrying a .system marker
+#                                (radio, nfc, ram, storage, dualsim, fps, esim,
+#                                 esimid, uwb, barometer, ecompass, frontcolor)
+#   ro.vendor.hw.{variant,sku_variant,wlc,felica,cli_video_panel}
+#                                from the vhw.xml <mappings> exports
+#   vendor.hw.touch.status       the reboot counter
+#   ro.vendor.product.{display,profile,hardware.sku.variant}
+#   ro.vendor.mot.gki.path       which modules directory utags.ko came from
+set_prop(init_hw, vendor_mot_hw_prop)
+set_prop(init_hw, vendor_mot_product_prop)
+set_prop(init_hw, vendor_mot_init_prop)
+
+# Properties the script READS.
+#   ro.boot.device                  bootloader_prop -- vhw.xml's match="..."
+#                                   attribute, the key the whole XML is indexed
+#                                   by, so without it no <mappings> export
+#                                   resolves.
+#   ro.build.version.incremental,
+#   ro.product.device/name          build_prop -- append_match() reads the
+#                                   unsuffixed name and writes the .vendor one.
+#                                   It only strips ".vendor", so ro.vendor.build.*
+#                                   is never read and build_vendor_prop is not
+#                                   needed here.
+get_prop(init_hw, bootloader_prop)
+get_prop(init_hw, build_prop)
+
+# NOT GRANTED, deliberately: set on build_vendor_prop. set_ro_vendor_incremental()
+# does try to write ro.vendor.build.version.incremental. There is NO neverallow
+# stopping us -- the only rule on build_vendor_prop in system/sepolicy is
+# get_prop(domain, build_vendor_prop) at private/domain.te:519, so granting the
+# set would build clean. It is left out because the write is provably useless:
+# the script only assigns vendor_incremental_value inside the
+# `[ -z "$fetch_value" ]` branch, ro.build.version.incremental is never empty on
+# our builds, so it always setprops the EMPTY string -- and onto a set-once ro.
+# property the build has already filled in. Cost: one "Unable to set property"
+# line from init per boot.
+#
+# ALSO NOT GRANTED: read on /proc/device-tree/chosen. Stock has
+# `allow init_hw sysfs_dt_chosen ...`, and vhw.xml's cli_video_panel mapping does
+# compare /proc/device-tree/chosen/mmi,panel_name_s against
+# "tm_vtdr6126A_1080x1272_dsc_vid_cli_v1". But sysfs_dt_chosen is not a type in
+# this tree, so it would need a new type plus a genfscon over
+# /sys/firmware/devicetree/base/chosen -- which would REMOVE that subtree from
+# every domain that reads it as plain `sysfs` today. Measured on this unit:
+# mmi,panel_name_s is "csot_nt37707_1080x1272_dsc_cmd_cli_v2", which does not
+# match the only variant, so ro.vendor.hw.cli_video_panel=false is the CORRECT
+# value either way and the missing read costs nothing here. Revisit if a SKU
+# with the TM video-mode cover panel ever needs supporting.

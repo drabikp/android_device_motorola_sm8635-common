@@ -1,1 +1,15 @@
 vendor.hw.fingerprint.status    u:object_r:vendor_mot_fingerprint_status_prop:s0
+
+# Set by /vendor/bin/init.oem.hw.sh from UTAG data -- see sepolicy/vendor/init_hw.te.
+# READ access for everyone else had to be granted back by hand; see property.te.
+#
+# Two different precedence rules keep the existing entries intact, and they are
+# not the same rule:
+#   - AOSP's ro.vendor.product.cpu.abilist{,32,64} carry `exact string`, and an
+#     EXACT entry beats a prefix entry outright, length irrelevant.
+#   - vendor.hw.fingerprint.status above and QCOM's vendor.hw.fm. are prefix
+#     entries like these, so they win on being LONGER.
+ro.vendor.hw.                   u:object_r:vendor_mot_hw_prop:s0
+vendor.hw.                      u:object_r:vendor_mot_hw_prop:s0
+ro.vendor.product.              u:object_r:vendor_mot_product_prop:s0
+ro.vendor.mot.gki.              u:object_r:vendor_mot_init_prop:s0

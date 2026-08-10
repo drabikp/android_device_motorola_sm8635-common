@@ -1,0 +1,32 @@
+# The UTAG driver's own access to its backing partitions.
+#
+# This is the SECOND, independent reason UTAGs were empty on this ROM, and it
+# would have survived fixing init_hw alone. Measured, not inferred:
+#
+#   $ echo 1 > /proc/hw/reload          # what init.oem.hw.sh does
+#   utags (reload_write): [sh] (pid 9019) [hw] 1
+#   utags (open_utags): (/dev/block/platform/soc/1d84000.ufshc/by-name/hw)
+#                       failed get block device
+#   utags (build_utags_directory): [hw] load error
+#
+# The driver does the open from a WORKQUEUE (load_work_func), not from the
+# writing process, so it runs as u:r:kernel:s0. A kretprobe on
+# blkdev_get_by_path pinned the error exactly:
+#
+#   bgpe: path="/dev/block/platform/soc/1d84000.ufshc/by-name/hw" mode=0x3
+#   bgp:  (load_work_func+0x48 [utags] <- blkdev_get_by_path) arg1=0xfffffffffffffff3
+#
+# 0xfffffffffffffff3 is -EACCES, and probes on blkdev_get_by_dev and blkdev_put
+# never fired, so it fails inside lookup_bdev's path walk rather than in the
+# open. NOTHING IS LOGGED -- the denial is dontaudit'ed, which is why this hid
+# behind "zero AVC denials device-wide" for days. `setenforce 0` and the same
+# write succeeds: status goes 2 -> 0 and /proc/hw fills with 12 UTAGs
+# (radio=ROW, nfc=ese_st, ram=12GB, dualsim=true, ...), /proc/config with 28
+# more (carrier=reteu, sku=XT2451-3, imei, version.baseband, ...).
+#
+# Stock's rules, verbatim, are the three below (vendor_sepolicy.cil 12309-12311).
+# The dir search on block_device is the one that matters for the path walk; the
+# blk_file pair is what the subsequent read/write of the partition needs.
+allow kernel block_device:dir search;
+allow kernel hw_block_device:blk_file rw_file_perms;
+allow kernel utags_block_device:blk_file rw_file_perms;

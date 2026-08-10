@@ -1,0 +1,12 @@
+# Motorola factory-data block devices. Neither type exists in AOSP or in QCOM's
+# sepolicy_vndr -- both are Motorola's own, taken from stock's
+# vendor_sepolicy.cil.
+#
+#   hw       (sda1, 8 MiB)   the per-SKU hardware descriptor UTAGs -> /proc/hw
+#   utags    (sde6, 512 KiB) the per-unit config UTAGs             -> /proc/config
+#   utagsBackup (sde7)       the mirror the driver falls back to
+#
+# Without these the partitions fell through to the generic block_device label
+# and the utags driver could not open them; see kernel.te for the measurement.
+type hw_block_device, dev_type;
+type utags_block_device, dev_type;

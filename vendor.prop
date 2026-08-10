@@ -326,16 +326,20 @@ ro.vendor.extension_library=libqti-perfd-client.so
 
 ro.vendor.hw.pvtui=1
 
-# NFC. /vendor/bin/init.oem.hw.sh derives every ro.vendor.hw.* value from
-# /vendor/etc/vhw.xml at boot, but it is unlabelled here so init refuses to exec
-# it (stock labels it init_hw_exec):
-#   init: Command 'exec_start vendor.oem-hw-sh' ... File /vendor/bin/init.oem.hw.sh
-#   (labeled "u:object_r:vendor_file:s0") has incorrect label or no domain transition
-# so ro.vendor.hw.nfc comes out EMPTY and nothing ever starts the NFC HAL.
+# NFC. This hardcode was originally a workaround: /vendor/bin/init.oem.hw.sh
+# derives every ro.vendor.hw.* value from the UTAG store, and it could not run
+# because it was unlabelled, so ro.vendor.hw.nfc came out EMPTY and nothing ever
+# started the NFC HAL.
 #
-# Hardcoding is exact rather than a guess: vhw.xml's arcfox section maps nfc to
-# ese_st for every hwid (map=1:ese_st,2:ese_st,3:ese_st,4:ese_st) and for all five
-# SKUs, and stock reports ro.vendor.hw.nfc=ese_st.
+# THAT IS FIXED -- see sepolicy/vendor/init_hw.te. The script now runs at
+# early-init and reads nfc=ese_st straight out of the UTAG, so this line is no
+# longer load-bearing. It is KEPT DELIBERATELY as a fallback, but be aware of the
+# ordering: init loads /vendor/build.prop in PropertyInit(), which happens before
+# the early-init trigger is queued, and ro.* properties are set-once. So this
+# value ALWAYS wins and the script's setprop is always rejected. The two agree on
+# this unit (both ese_st), so it is invisible today -- but on any SKU where they
+# disagree, the hardcode silently beats the factory data. Delete this line if
+# that ever matters.
 #
 # Deliberately NOT setting ro.vendor.hw.felica: it is true only for radio=JPN,
 # and empty already behaves as false for every trigger and for the HAL.

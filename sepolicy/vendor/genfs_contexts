@@ -1,0 +1,13 @@
+# The UTAG procfs. utags.ko creates /proc/hw (per-SKU hardware descriptor) and
+# /proc/config (per-unit factory config); both were falling through to the
+# generic u:object_r:proc:s0.
+#
+# Taken verbatim from stock's vendor_sepolicy.cil:
+#   (genfscon proc "/config" (u object_r proc_hwconf ((s0) (s0))))
+#   (genfscon proc "/hw"     (u object_r proc_hwconf ((s0) (s0))))
+#
+# genfscon matches by longest path prefix, so "/config" here does NOT capture
+# /proc/config.gz -- AOSP's own `genfscon proc /config.gz u:object_r:config_gz:s0`
+# is longer and still wins.
+genfscon proc /hw     u:object_r:proc_hwconf:s0
+genfscon proc /config u:object_r:proc_hwconf:s0

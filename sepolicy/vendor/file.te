@@ -20,3 +20,8 @@
 # mount; it is what firmware_file and bt_firmware_file carry in
 # sm8650/generic/vendor/common/file.te, and this mirrors them.
 type fsg_file, file_type, contextmount_type, vendor_file_type;
+
+# The UTAG procfs created by utags.ko: /proc/hw and /proc/config. Motorola's own
+# type (stock vendor_sepolicy.cil line 3290); see genfs_contexts for the
+# labelling and init_hw.te for what reads and writes it.
+type proc_hwconf, fs_type, proc_type;

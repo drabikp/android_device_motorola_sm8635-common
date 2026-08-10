@@ -7,3 +7,45 @@
 #   neverallow { domain -init -vendor_init } vendor_default_prop:property_service set;
 # so sepolicy_neverallows would fail the build.
 vendor_internal_prop(vendor_mot_fingerprint_status_prop)
+
+# Motorola's UTAG-derived property namespaces, needed so init.oem.hw.sh can set
+# them at all: AOSP's neverallow
+#   neverallow { domain -init -vendor_init } vendor_default_prop:property_service set;
+# means a new vendor domain cannot write anything that falls through to the
+# default label, so each prefix it exports needs a type of its own. Names are
+# stock's (vendor_mot_hw_prop, vendor_mot_product_prop, vendor_mot_init_prop).
+#
+# These are `restricted`, not `internal`: restricted limits WRITES to /vendor
+# and leaves reads open, which is what we want -- ro.vendor.hw.* is read by
+# vendor HALs, by init when it maps ro.vendor.product.* onto ro.product.vendor.*,
+# and by dumpstate. `internal` would forbid coredomain reads and break that.
+vendor_restricted_prop(vendor_mot_hw_prop)
+vendor_restricted_prop(vendor_mot_product_prop)
+vendor_restricted_prop(vendor_mot_init_prop)
+
+# READ ACCESS HAS TO BE GRANTED BACK EXPLICITLY. This is the trap in the macro:
+# `restricted` and `internal` only emit NEVERALLOWs, they grant nothing. Before
+# the relabel every one of these properties fell through to vendor_default_prop,
+# and system/sepolicy/private/domain.te:509 hands that one out for free:
+#
+#   compatible_property_only(`
+#       get_prop({domain -coredomain -appdomain}, vendor_default_prop)
+#   ')
+#
+# PRODUCT_SHIPPING_API_LEVEL := 34 (common.mk:29) selects that branch, so every
+# vendor domain was reading ro.vendor.hw.* through it. Moving the prefixes to a
+# type of their own silently took that away, and an independent review caught
+# rild, hal_nfc_default, hal_bluetooth_default, hal_graphics_composer_default and
+# vendor_thermal-engine all denied read on vendor_mot_hw_prop -- rild's repeating
+# every five seconds forever.
+#
+# The reader sets below are stock's, from vendor_sepolicy.cil: `allow domain
+# vendor_mot_product_prop`, plus the per-domain grants for the hw/init prefixes.
+# Granting coredomain READ is legal here: `restricted` neverallows coredomain
+# WRITES only.
+get_prop(domain, vendor_mot_product_prop)
+get_prop({ domain -coredomain -appdomain }, vendor_mot_hw_prop)
+get_prop({ domain -coredomain -appdomain }, vendor_mot_init_prop)
+get_prop({ system_server zygote surfaceflinger bootanim shell dumpstate }, vendor_mot_hw_prop)
+get_prop({ platform_app priv_app system_app }, vendor_mot_hw_prop)
+get_prop({ surfaceflinger dumpstate }, vendor_mot_init_prop)
