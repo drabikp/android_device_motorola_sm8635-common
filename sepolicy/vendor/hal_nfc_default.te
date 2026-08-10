@@ -1,0 +1,12 @@
+# The ST NFC HAL reads persist.vendor.radio.multisim.config to decide how many
+# SIM/eSE routes to configure. Observed once the HAL was started by hand:
+#
+#   avc: denied { read } for comm="android.hardwar"
+#        name="u:object_r:vendor_radio_prop:s0"
+#        scontext=u:r:hal_nfc_default:s0 tcontext=u:object_r:vendor_radio_prop:s0
+#        tclass=file permissive=0
+#
+# The HAL registers INfc/default and drives the chip fine without it, so this is
+# not a blocker -- but it is one denial per start and the multisim routing is
+# silently wrong without it.
+get_prop(hal_nfc_default, vendor_radio_prop)

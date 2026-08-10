@@ -10,8 +10,13 @@ PRODUCT_SOONG_NAMESPACES += $(COMMON_PATH)
 #   hardware/qcom-caf/bootctrl                    android.hardware.boot-service.qti
 #   vendor/qcom/opensource/commonsys-intf/display the vendor.qti.hardware.display.*
 #                                                 AIDL interfaces
+#   hardware/qcom-caf/wlan/qcwcn                  lib_driver_cmd_qcwcn, the QCA
+#                                                 vendor-command backend that
+#                                                 BOARD_WPA_SUPPLICANT_PRIVATE_LIB
+#                                                 names, and libwifi-hal-qcom
 PRODUCT_SOONG_NAMESPACES += hardware/qcom-caf/bootctrl
 PRODUCT_SOONG_NAMESPACES += vendor/qcom/opensource/commonsys-intf/display
+PRODUCT_SOONG_NAMESPACES += hardware/qcom-caf/wlan/qcwcn
 
 # NOTE: the display composer/allocator/mapper are shipped as STOCK BLOBS, not
 # built from source. Building them here was tried and reverted -- every SDM
@@ -265,11 +270,50 @@ PRODUCT_PACKAGES += \
 
 # WiFi. The HAL binary and all its dependencies are already shipped and the
 # qca_cld3_kiwi_v2 driver is loaded, but nothing started the service. This rc
-# does. It is expected to abort on addService with -3 until the VINTF fragment
-# lands in the NEXT cycle -- that abort is the proof it reaches registration.
+# does. Both landed and IWifi/default now registers.
+#
+# android.hardware.wifi-V1-ndk.vendor is the version Motorola COMPILED the HAL
+# against. We used to relink the blob to V4 instead; it registered and then
+# SIGABRTed inside the V4 NDK backend the first time the framework touched
+# IWifiStaIface (free() on a 0x3 pointer). Same rule, and the same fix, as the
+# keymint V2/V3 pair above: ship the version the blob expects, never rewrite its
+# DT_NEEDED. Details in extract-files.py and vintf/android.hardware.wifi-arcfox.xml.
 PRODUCT_PACKAGES += \
     init.arcfox-wifi.rc \
-    android.hardware.wifi-arcfox.xml
+    android.hardware.wifi-arcfox.xml \
+    android.hardware.wifi-V1-ndk.vendor
+
+# wpa_supplicant, built from source (see the Wi-Fi block in BoardConfigCommon.mk
+# for why the Motorola blob is unusable). The Soong module installs to the same
+# path the blob used, /vendor/bin/hw/wpa_supplicant, and brings its own init rc
+# and its own VINTF fragment for ISupplicant/default -- so, unlike a blob, the
+# binary, the rc and the manifest entry cannot drift apart. (The fragment installs
+# as version 4, not 5: assemble_vintf clamps it to the latest frozen version. FCM
+# 202504 asks for supplicant 3-4, so 4 is in range.)
+#
+# lib_driver_cmd_qcwcn is selected by BOARD_WPA_SUPPLICANT_PRIVATE_LIB and gives
+# the QCA vendor driver commands the framework expects.
+#
+# wpa_supplicant.conf must be listed explicitly. It is qcwcn's prebuilt_etc
+# (generated from AOSP's template by :wpa_supplicant_conf_gen) and it took the
+# place of the Motorola blob conf we dropped -- but nothing pulls it in on its
+# own, and without it /vendor/etc/wifi/wpa_supplicant.conf simply does not ship.
+# That does not fail this device today only because /data/vendor/wifi/wpa/
+# already holds a copy from an earlier boot; on a clean flash or after a data
+# wipe the supplicant would have no template to seed from.
+PRODUCT_PACKAGES += \
+    wpa_supplicant \
+    wpa_supplicant.conf
+
+
+# NFC. Everything already ships -- the ST HAL, nfc_nci.st21nfc.st.so, both
+# firmware blobs, all libnfc-hal-st*.conf, the SELinux labels -- and
+# INfc/default is ALREADY VINTF-declared. Only ro.vendor.hw.nfc (see vendor.prop)
+# and a usable start trigger were missing, so servicemanager retried
+# tryStartService once a second forever. Verified live before shipping: started
+# by hand, the HAL registers and exchanges real NCI frames with the chip.
+PRODUCT_PACKAGES += \
+    init.arcfox-nfc.rc
 
 
 # Bluetooth audio HAL. Without it com.android.bluetooth HARD-ABORTS on every

@@ -1,0 +1,9 @@
+# vendor.hw.* is Motorola's namespace (stock labels the whole prefix
+# vendor_mot_hw_prop). We only need the single property the FPC fingerprint HAL
+# sets on startup.
+#
+# Do NOT try to shortcut this with set_prop(hal_fingerprint_default,
+# vendor_default_prop): system/sepolicy/private/domain.te has
+#   neverallow { domain -init -vendor_init } vendor_default_prop:property_service set;
+# so sepolicy_neverallows would fail the build.
+vendor_internal_prop(vendor_mot_fingerprint_status_prop)

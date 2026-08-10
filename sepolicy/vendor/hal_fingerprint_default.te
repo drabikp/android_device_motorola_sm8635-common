@@ -1,0 +1,24 @@
+# The FPC fingerprint HAL starts and STAYS ALIVE -- it is not a crash loop -- but
+# it never calls addService, so system_server polls
+# android.hardware.biometrics.fingerprint.IFingerprint/default once a second
+# forever. Three denials, all correlated to the HAL's pid, explain it:
+#
+#   { search }     tcontext=u:object_r:vendor_sysfs_devicetree_soc:s0 dir
+#   { read write } name="smcinvoke" tcontext=u:object_r:tee_device:s0 chr_file
+#   { set }        property=vendor.hw.fingerprint.status
+#
+# smcinvoke is the fatal one: the FPC matcher is a QTEE trusted app, so with
+# /dev/smcinvoke denied the HAL can never finish init and never registers.
+#
+# Stock's equivalent domain (vendor_hal_fingerprint_fpc, a Motorola type we do
+# not have) carries the same set plus the qseecom dma-buf heaps and input_device.
+# Those are pre-granted here rather than discovered one boot cycle per denial --
+# a denied process stops at the FIRST denial, so the three observed ones are not
+# necessarily the complete blocking set.
+allow hal_fingerprint_default tee_device:chr_file rw_file_perms;
+allow hal_fingerprint_default vendor_dmabuf_qseecom_heap_device:chr_file r_file_perms;
+allow hal_fingerprint_default vendor_dmabuf_qseecom_ta_heap_device:chr_file r_file_perms;
+allow hal_fingerprint_default vendor_sysfs_devicetree_soc:dir search;
+allow hal_fingerprint_default vendor_sysfs_devicetree_soc:file r_file_perms;
+allow hal_fingerprint_default input_device:chr_file rw_file_perms;
+set_prop(hal_fingerprint_default, vendor_mot_fingerprint_status_prop)

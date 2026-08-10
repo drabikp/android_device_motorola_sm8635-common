@@ -1,0 +1,35 @@
+# Start the ST NFC HAL.
+#
+# arcfox is an ST54L part: st21nfc.ko is in modules.load, vendor.prop carries
+# persist.vendor.nfc.stchipinfo=st54l, and stock runs st_nfc_aidl_service.
+# (nxp-nci.ko is also in modules.load -- on STOCK TOO -- and binds nothing. The
+# dual lsmod entry is not evidence of an NXP part.)
+#
+# The blob rc /vendor/etc/init/nfc-service-st.rc gates the start on
+#     init.svc.vendor.stflashtool=stopped && ro.vendor.hw.nfc=ese_st
+# and that conjunction can NEVER be satisfied on this build. /vendor/bin/STFlashTool
+# has no vendor_file_contexts entry (stock labels it stflashtool_exec), so init
+# fails it in ComputeContextFromExecutable BEFORE the fork -- and NotifyStateChange,
+# the only writer of init.svc.*, is not reached until after that. So
+# init.svc.vendor.stflashtool is never created at all, not even as "stopped".
+#
+# Skipping STFlashTool costs nothing: it wants /vendor/etc/st21nfc_conf.txt, which
+# does not ship even on stock, and the HAL does its own firmware update from
+# /vendor/firmware/st21nfc_fw*.bin.
+#
+# `on boot` lands just after init.rc's `class_start hal`, which skips this service
+# because the blob marks it `disabled`. It is also after `on early-boot`, where
+# init.vendor.st21nfc.rc chowns /dev/st21nfc to nfc:nfc 0660.
+#
+# NO VINTF CHANGE ACCOMPANIES THIS, and none is needed: android.hardware.nfc
+# INfc/default is ALREADY declared in this device tree's manifest.xml. That
+# declaration is exactly why servicemanager retried tryStartService once a second
+# forever. The usual "declare only after a -3 abort" two-step does not apply --
+# step 2 shipped long ago; only the start trigger was missing.
+#
+# PROVEN LIVE before shipping: with the HAL started by hand via
+# `setprop ctl.start st_nfc_aidl_service`, android.hardware.nfc.INfc/default
+# appeared in `service list`, the framework's android.nfc.INfcAdapter came up,
+# and StNfcHal logged real NCI Tx/Rx traffic with the chip.
+on boot && property:ro.vendor.hw.nfc=ese_st
+    start st_nfc_aidl_service

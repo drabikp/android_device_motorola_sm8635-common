@@ -1,42 +1,53 @@
-<!-- Declares the WiFi HAL. Ships in the cycle AFTER init.arcfox-wifi.rc, on
-     purpose.
+<!-- Declares the WiFi HAL.
 
-     The rule on this device is: never declare a HAL in VINTF until its service is
-     PROVEN to reach registration. Declaring one that cannot register wedges its
-     client in an untimed waitForDeclaredService and has cost four boots here
-     (weaver, fingerprint, NFC, and a premature sensors declaration).
+     NO <version> ELEMENT, ON PURPOSE. Do not "fix" this by adding one.
 
-     bc25 supplied that proof. With only the init rc in place, the service starts,
-     initialises, and dies at exactly one point:
+     This file used to declare <version>4</version>, justified as "read off the
+     binary, not assumed: android.hardware.wifi-service links
+     android.hardware.wifi-V4-ndk.so". That reasoning was circular: the binary
+     only linked V4 because our own extract-files.py had rewritten its DT_NEEDED
+     from V1 to V4. Motorola built it against V1.
 
-       I android.hardware.wifi-service: Wifi Hal is booting up...
-       F android.hardware.wifi-service: service.cpp:64] Check failed:
-           result == STATUS_OK (result=-3, STATUS_OK=0) Failed to register wifi HAL
+     The consequence was not a registration failure but something much harder to
+     read. IWifi registered fine, then the HAL SIGABRTed the instant the
+     framework called into IWifiStaIface, inside the V4 NDK backend's
+     onTransact, free()ing a pointer of 0x3. The relink has been removed and
+     common.mk now ships android.hardware.wifi-V1-ndk.vendor instead.
 
-     -3 is EX_ILLEGAL_ARGUMENT from AServiceManager_addService via
-     meetsDeclarationRequirements(): an "android.hardware." name that is not
-     VINTF-declared cannot register. Nothing else is wrong; it got past
-     "booting up", i.e. past HAL init, and the missing declaration is the only
-     thing rejecting it. Same sequence that took sensors from a boot-killing crash
-     loop to 68 working sensors (bc22 fix crash -> reaches addService -> bc23
-     declare -> registers).
+     Omitting <version> is what stock does. Its
+     vendor/etc/vintf/manifest/android.hardware.wifi-service.xml carries only a
+     <name> and an <fqname>.
 
-     Version 4 is read off the binary, not assumed: android.hardware.wifi-service
-     links android.hardware.wifi-V4-ndk.so, and that library is present in
-     /vendor/lib64. The instance name is service.cpp:57,
-     Wifi::descriptor + "/default".
+     Do not take "stock does it" as the justification, though, because it does not
+     transfer: stock's ro.board.api_level selects FCM 202404, which asks for wifi
+     1-2, and a version-less AIDL entry defaults to 1. This build is 202504, whose
+     matrix asks 2-3, so 1 is outside it.
+
+     The declaration is nevertheless harmless, for reasons worth writing down:
+     libvintf in this tree does not version-check HALs at all (HalManifest::
+     checkCompatibility validates schema type, VNDK, SDK, sepolicy and kernel and
+     has no HAL loop), check_vintf is not part of the build target used here, and
+     servicemanager's isDeclared matches package/interface/instance without a
+     version. So 4, 1 and absent behave identically, and the version that actually
+     governs runtime is the one the implementation reports from
+     getInterfaceVersion(), i.e. 1, because that is what the blob was compiled
+     against.
+
+     The real cost is not this file: running a V1 implementation means anything
+     the Android 16 wifi framework gates on version >= 2 (MLO / Wi-Fi 7, the newer
+     TWT and channel APIs) is unavailable, and an unguarded newer call would come
+     back UNKNOWN_TRANSACTION. That is inherent to the blob, not to the manifest.
+
+     Verified live on the device before this file was written: IWifi/default and
+     ISupplicant/default both register, wpa_supplicant runs, wlan0 comes UP as
+     ROLE_CLIENT_PRIMARY, and a scan returns networks on both 2.4 GHz and 5 GHz.
 
      Filename deliberately differs from any AOSP-shipped fragment name so kati
      cannot fail with "already defined by", the same reason
-     android.hardware.sensors-arcfox.xml is named as it is.
-
-     The kernel side is already up: qca_cld3_kiwi_v2, cnss2, cfg80211, mac80211
-     and rmnet_wlan are all loaded. There is simply no wlan0 yet, because nothing
-     had ever called into the HAL to create one. -->
+     android.hardware.sensors-arcfox.xml is named as it is. -->
 <manifest version="1.0" type="device">
     <hal format="aidl">
         <name>android.hardware.wifi</name>
-        <version>4</version>
         <fqname>IWifi/default</fqname>
     </hal>
 </manifest>

@@ -406,6 +406,61 @@ TARGET_FS_CONFIG_GEN := $(COMMON_PATH)/configs/config.fs
 TARGET_SYSTEM_PROP += $(COMMON_PATH)/system.prop
 TARGET_VENDOR_PROP += $(COMMON_PATH)/vendor.prop
 
+# --- Wi-Fi --------------------------------------------------------------------
+# Build wpa_supplicant FROM SOURCE. Motorola's blob cannot run on this build at
+# all -- it is linked against their own /vendor/lib64/libcrypto.so, an older
+# BoringSSL that still exports the bare sk_dup/sk_num/sk_value stack API. Our
+# BoringSSL exports only the OPENSSL_sk_* names, so the blob dies at exec:
+#   CANNOT LINK EXECUTABLE "/vendor/bin/hw/wpa_supplicant":
+#   cannot locate symbol "sk_dup"
+# The only way to satisfy it would be to ship Motorola's libcrypto.so as
+# /vendor/lib64/libcrypto.so, which -- via extract_utils' prefer:true -- would
+# swap the C crypto library out from under EVERY vendor process. Not acceptable
+# for one binary, so the blob is dropped from proprietary-files.txt instead.
+#
+# Source-built supplicant is also what every other LineageOS Qualcomm target
+# does: external/wpa_supplicant_8 + hardware/qcom-caf/wlan/qcwcn's
+# lib_driver_cmd_qcwcn. It talks to the driver over nl80211, so it does NOT
+# share a private C++ ABI with the Motorola Wi-Fi HAL blob we keep -- this is a
+# clean interface, not the source/blob mixing that broke the display stack.
+#
+# Deliberately NOT setting WIFI_DRIVER_STATE_CTRL_PARAM: that would compile the
+# /dev/wlan "ON" write into a source-built libwifi_hal. We keep Motorola's
+# libwifi-hal.so blob (its only consumer is android.hardware.wifi-service) and
+# the write works now that the driver probes -- see the WCNSS_qcom_cfg.ini note
+# in proprietary-files.txt.
+#
+# Deliberately NOT setting BOARD_WLAN_DEVICE either, and this is not an omission:
+#   * For the supplicant it buys nothing. wpa_supplicant_driver_cflags_default
+#     selects on it, but the `qcwcn` branch and the `default` branch are the SAME
+#     value, -DCONFIG_DRIVER_NL80211_QCA.
+#   * For libwifi_hal it is fatal IN THIS TREE. Setting it makes
+#     libwifi_hal_vendor_impl_defaults pull `defaults: ["libwifi-hal-qcom"]`, and
+#     soong fails with
+#       error: module "libwifi-hal": defaults: module libwifi-hal-qcom is not an
+#       defaults module
+#     Note WHY, because the obvious reading is wrong: a proper cc_defaults named
+#     libwifi-hal-qcom does exist, in hardware/qcom-caf/wlan/Android.bp. It gets
+#     shadowed by the cc_library of the same name in
+#     hardware/qcom-caf/wlan/qcwcn/wifi_hal/Android.bp -- which is only visible
+#     because WE import the qcwcn namespace (needed for lib_driver_cmd_qcwcn).
+#     So this is a consequence of our own namespace import, not a defect in qcwcn.
+#     Resolving it properly would mean importing the parent namespace instead and
+#     checking nothing else collides; not worth it, because we do not want a
+#     source libwifi_hal at all -- the Motorola blob is the one that works and it
+#     overrides the source module via prefer:true.
+#
+# WIFI_HIDL_UNIFIED_SUPPLICANT_SERVICE_RC_ENTRY is REQUIRED, not cosmetic. The
+# source wpa_supplicant's init_rc is behind that soong config variable; without
+# it the binary installs with NO init rc at all and nothing can ever start it --
+# the same "HAL binary shipped with no .rc" failure this port has already hit
+# ten times. It matters even more here because the blob's rc was removed with
+# the blob.
+BOARD_WPA_SUPPLICANT_DRIVER                   := NL80211
+BOARD_WPA_SUPPLICANT_PRIVATE_LIB              := lib_driver_cmd_qcwcn
+WIFI_HIDL_UNIFIED_SUPPLICANT_SERVICE_RC_ENTRY := true
+WPA_SUPPLICANT_VERSION                        := VER_0_8_X
+
 # --- Blobs ------------------------------------------------------------------
 -include vendor/motorola/sm8635-common/BoardConfigVendor.mk
 

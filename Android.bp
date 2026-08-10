@@ -86,3 +86,13 @@ prebuilt_etc {
     vendor: true,
 }
 
+// Starts the ST NFC HAL. The blob rc's start trigger depends on an init.svc.*
+// property that can never exist on this build. No VINTF change goes with it --
+// INfc/default is already declared. See the file.
+prebuilt_etc {
+    name: "init.arcfox-nfc.rc",
+    src: "init/init.arcfox-nfc.rc",
+    sub_dir: "init",
+    vendor: true,
+}
+

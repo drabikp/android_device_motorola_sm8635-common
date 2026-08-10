@@ -394,7 +394,13 @@ vendor/lib64/libspcom.so
 system_ext/framework/vendor.qti.hardware.alarm-V1.0-java.jar
 vendor/bin/power_off_alarm
 system_ext/bin/qccsyshal@1.2-service
-system_ext/etc/init/vendor.qti.hardware.qccsyshal@1.2-service.rc
+# qccsyshal@1.2-service's init rc is DELIBERATELY not shipped. The binary is a
+# pure orphan: nothing in vendor/, system/ or system_ext/ VINTF declares
+# vendor.qti.hardware.qccsyshal, and nothing waits on it -- yet init forked and
+# killed it every 5 seconds forever on the partition-split protobuf failure
+# documented in logs/cannot-link-cluster.md. Even Motorola treats the HIDL 1.2
+# daemon as legacy (stock also ships an AIDL replacement whose rc is commented
+# out). The binary and its libs are left listed so this is trivially reversible.
 system_ext/lib64/libqcc_file_agent_sys.so
 system_ext/lib64/vendor.qti.hardware.qccsyshal@1.0.so;MODULE_SUFFIX=_system_ext
 system_ext/lib64/vendor.qti.hardware.qccsyshal@1.1.so;MODULE_SUFFIX=_system_ext
@@ -880,7 +886,6 @@ vendor/bin/hw/vendor.zuialarm.hardware.alarm@1.0-service
 vendor/bin/hw/vendor.zui.hardware.ifaa@1.0-service
 vendor/etc/init/android.hardware.biometrics.face-service.face.rc
 vendor/etc/init/android.hardware.drm@1.1-service.wfdhdcp.rc
-vendor/etc/init/android.hardware.wifi.supplicant-service.rc
 vendor/etc/init/cas-default.rc
 vendor/etc/init/com.qualcomm.qti.wifidisplayhal@1.0-service.rc
 vendor/etc/init/dcfd.rc
@@ -1087,7 +1092,6 @@ vendor/lib64/libnativecospatchkernel-thales.so
 vendor/lib64/libextra-thales.so
 vendor/lib64/vendor.dolby.hardware.dms@2.0.so
 vendor/lib64/vendor.dolby.hardware.dms@2.1.so
-vendor/lib64/libcert_parse.wpa_s.so
 vendor/lib64/libqvrservice.so
 vendor/lib64/vendor.qti.hardware.limits@1.0.so
 vendor/lib64/vendor.qti.hardware.limits@1.1.so
@@ -1246,11 +1250,10 @@ vendor/lib64/vendor.qti.hardware.radio.internal.deviceinfo-V1-ndk.so
 # is shipped. Restoring it needs a .replace_needed() fixup in extract-files.py.
 # add-missing-hals.sh WILL re-add it -- delete it again after running that script.
 #
-# wpa_supplicant: parked together with android.hardware.wifi-service. Its own
-# AIDL versions are fixed up (supplicant V2->V4, keystore2 V1->V5, verified with
-# readelf on the staged blob), but something else in its dependency closure still
-# pulls android.system.keystore2-V1-ndk-source. Since the wifi HAL is parked
-# anyway, supplicant alone buys nothing. WI-FI IS DISABLED until both return.
+# OBSOLETE NOTE, kept only so nobody re-derives it: this used to say wpa_supplicant
+# and android.hardware.wifi-service were parked and "WI-FI IS DISABLED until both
+# return". Both ship now (see vendor/bin/hw/wpa_supplicant above and the wifi HAL),
+# the HAL registers IWifi/default, and the framework wifi services come up.
 
 # --- HALs missing from the original zeekr-derived intersection -------------
 # 62 HAL service binaries and their init/vintf/permissions files were absent,
@@ -1450,8 +1453,42 @@ vendor/bin/zui_power_off_alarm
 vendor/bin/hw/android.hardware.biometrics.face-service.face-isv
 vendor/bin/hw/android.hardware.biometrics.face@1.0-service.face
 vendor/bin/hw/android.hardware.biometrics.fingerprint-service.fpc
-vendor/bin/hw/android.hardware.wifi-service
-vendor/bin/hw/wpa_supplicant;DISABLE_CHECKELF
+# Plain entry, NO flags -- deliberately. Two things were tried here and both
+# broke the device; do not re-apply either.
+#
+# The blob is compiled against android.hardware.wifi-V1-ndk while AOSP's own
+# android.hardware.wifi-service uses V4, and soong merges the paired prebuilt and
+# source graphs and refuses "multiple versions of the same aidl_interface".
+#   * ;MODULE_SUFFIX=_arcfox unpairs them, which un-suppresses AOSP's module:
+#     two installers for this path plus a competing V4 VINTF fragment.
+#     (;OVERRIDES cannot fix that -- extract_utils only honours OVERRIDES for
+#     android_app_import.)
+#   * ;DISABLE_DEPS drops EVERY dependency edge, not just the wifi-V1 one, so
+#     libwifi-system-iface stopped being installed into /vendor/lib64 and the HAL
+#     crash-looped at exec:
+#       CANNOT LINK EXECUTABLE: library "libwifi-system-iface.so" not found
+#     It survived a static pre-flash check because that library does exist in
+#     /system/lib64 -- which a vendor process cannot link from.
+# The single V1 edge is now removed surgically by a lib_fixup in
+# extract-files.py, which leaves every other edge intact.
+#
+# DISABLE_CHECKELF follows from that and nothing more: with the edge removed,
+# check_elf_file sees a DT_NEEDED with no matching shared_libs entry
+#   error: DT_NEEDED "android.hardware.wifi-V1-ndk.so" is not specified in shared_libs
+# It is the narrow flag -- it silences that one consistency check and does not
+# touch the dependency graph the way DISABLE_DEPS does. The library is shipped
+# by common.mk (android.hardware.wifi-V1-ndk.vendor); confirm it is in
+# out/target/product/arcfox/vendor/lib64 if you ever change this.
+vendor/bin/hw/android.hardware.wifi-service;DISABLE_CHECKELF
+# wpa_supplicant is DELIBERATELY NOT a blob -- it is built from source (see the
+# Wi-Fi block in BoardConfigCommon.mk). Motorola's binary is linked against their
+# own older-BoringSSL /vendor/lib64/libcrypto.so and dies at exec on this build:
+#   CANNOT LINK EXECUTABLE: cannot locate symbol "sk_dup"
+# The Soong module installs to this same path, so listing the blob here again
+# would silently override it via prefer:true and reinstate a binary that cannot
+# start. Its rc (vendor/etc/init/android.hardware.wifi.supplicant-service.rc) and
+# libcert_parse.wpa_s.so were removed with it -- the source module ships its own
+# rc, and libcert_parse had no other consumer.
 vendor/lib/libaualgo_ainr_component.so
 vendor/lib/libaualgo_azp_component.so
 vendor/lib/libext_tflite_c.so
@@ -1785,7 +1822,17 @@ vendor/lib64/libwfduibcsink_vendor.so
 vendor/lib64/libwfduibcsrcinterface_vendor.so
 vendor/lib64/libwfduibcsrc_vendor.so
 vendor/lib64/libwfdutils_proprietary.so
-vendor/lib64/libwifi-hal-ctrl.so
+# libwifi-hal-ctrl.so is NOT a blob any more -- it is built from source
+# (hardware/qcom-caf/wlan/qcwcn/wifi_hal), because that Soong namespace has to be
+# visible for lib_driver_cmd_qcwcn and soong refuses a module name that exists in
+# two namespaces for the same partition:
+#   error: module "libwifi-hal-ctrl" ... found in multiple namespaces
+#          (hardware/qcom-caf/wlan/qcwcn and vendor/motorola/sm8635-common)
+# Safe swap, verified rather than assumed: the source is a cc_library_shared of
+# QCA's own wifi_hal_ctrl.c exporting exactly the blob's five symbols
+# (wifihal_ctrl_open/open2/close/request/request2), and the only consumer in the
+# image, vendor/bin/cnss_diag, references NONE of them -- its DT_NEEDED entry is
+# vestigial.
 vendor/lib64/libwifi-hal.so
 vendor/lib64/libWlanServiceJni.so
 vendor/lib64/motorola.hardware.tcmdaidl-V1-ndk.so
@@ -1987,8 +2034,40 @@ vendor/etc/display/qdcm_calib_data_mipi_mot_video_dummy_qhd.json
 vendor/etc/wifi/p2p_supplicant_overlay.conf
 vendor/etc/wifi/vendor_cmd.xml
 vendor/etc/wifi/wfdr2_regex.conf
-vendor/etc/wifi/wpa_supplicant.conf
+# vendor/etc/wifi/wpa_supplicant.conf is NOT a blob any more. qcwcn's own
+# config/Android.bp installs it there from :wpa_supplicant_conf_gen (the AOSP
+# template plus the QCA driver additions), and two installers for one path is a
+# hard kati error:
+#   error: overriding commands for target
+#          out/target/product/arcfox/vendor/etc/wifi/wpa_supplicant.conf
+# The generated one is the right half of the pair: we now build the supplicant
+# from source, and Motorola's conf was written for THEIR supplicant build (it
+# even sets ctrl_interface=wlan0, which the AOSP rc overrides with -O anyway).
+# The two overlay confs below are still blobs -- nothing else provides them.
 vendor/etc/wifi/wpa_supplicant_overlay.conf
+# WLAN host-driver config. Without these the qca_cld3_kiwi_v2 probe fails and
+# there is no wlan0 at all:
+#   ueventd: firmware: could not find firmware for wlan/qca_cld/kiwi_v2/WCNSS_qcom_cfg.ini
+#   cnss: Failed to probe host driver, err = -1
+# On stock that directory holds THREE symlinks, and extract_utils silently drops
+# symlinks -- which is why neither the links nor the kiwi_v2/ target directory was
+# ever extracted:
+#   WCNSS_prc_cfg.ini  -> /vendor/etc/wifi/kiwi_v2/WCNSS_prc_cfg.ini
+#   WCNSS_qcom_cfg.ini -> /vendor/etc/wifi/kiwi_v2/WCNSS_qcom_cfg.ini
+#   wlan_mac.bin       -> /mnt/vendor/persist/kiwi_v2/wlan_mac.bin
+# Only the two .ini files are restored here. wlan_mac.bin CANNOT be shipped as a
+# real file -- it has to resolve into /mnt/vendor/persist, which needs a genuine
+# symlink (install_symlink or LOCAL_POST_INSTALL_CMD). It is left out because
+# wlan0 comes up with a correct Motorola MAC without it, and
+# /mnt/vendor/persist/kiwi_v2/ does not even exist on this device; revisit only if
+# the MAC ever turns out to be random across boots.
+# Shipped as four real files rather than links: the firmware loader reads them
+# during early boot and a plain file has no resolution order to get wrong.
+# Do not "clean this up" back into symlinks without re-reading that trap.
+vendor/etc/wifi/kiwi_v2/WCNSS_prc_cfg.ini
+vendor/etc/wifi/kiwi_v2/WCNSS_qcom_cfg.ini
+vendor/firmware/wlan/qca_cld/kiwi_v2/WCNSS_prc_cfg.ini
+vendor/firmware/wlan/qca_cld/kiwi_v2/WCNSS_qcom_cfg.ini
 vendor/firmware/cps4041.bin
 vendor/firmware/cps4041_2nd.bin
 vendor/firmware/csot_gdx_cfg_group.bin
@@ -2100,11 +2179,11 @@ vendor/lib64/com.qti.feature2.swmf.so
 vendor/lib64/libBSTNodeUtils.so
 vendor/lib64/libcom.qti.chinodeutils.so
 #
-# libkeystore-engine-wifi-hidl: dropped. An optional OpenSSL engine that lets
-# wpa_supplicant use keystore-backed EAP certificates (enterprise Wi-Fi). Its own
-# Android.bp is clean after the keystore2 V1->V5 fixup, but soong still resolves
-# keymint-V1 alongside V4 somewhere deeper in its graph. Normal WPA2/WPA3-PSK
-# does not need it; enterprise EAP-TLS with keystore certs will not work.
+# OBSOLETE NOTE. This used to say libkeystore-engine-wifi-hidl was dropped and
+# that "enterprise EAP-TLS with keystore certs will not work". Both parts are now
+# false: the library is BUILT FROM SOURCE (system/security/keystore-engine), it is
+# installed in /vendor/lib64, and external/wpa_supplicant_8 lists it in shared_libs
+# unconditionally, so it is in the running supplicant's link closure.
 
 # --- HALs missing from the original zeekr-derived intersection -------------
 # 62 HAL service binaries and their init/vintf/permissions files were absent,

@@ -326,6 +326,21 @@ ro.vendor.extension_library=libqti-perfd-client.so
 
 ro.vendor.hw.pvtui=1
 
+# NFC. /vendor/bin/init.oem.hw.sh derives every ro.vendor.hw.* value from
+# /vendor/etc/vhw.xml at boot, but it is unlabelled here so init refuses to exec
+# it (stock labels it init_hw_exec):
+#   init: Command 'exec_start vendor.oem-hw-sh' ... File /vendor/bin/init.oem.hw.sh
+#   (labeled "u:object_r:vendor_file:s0") has incorrect label or no domain transition
+# so ro.vendor.hw.nfc comes out EMPTY and nothing ever starts the NFC HAL.
+#
+# Hardcoding is exact rather than a guess: vhw.xml's arcfox section maps nfc to
+# ese_st for every hwid (map=1:ese_st,2:ese_st,3:ese_st,4:ese_st) and for all five
+# SKUs, and stock reports ro.vendor.hw.nfc=ese_st.
+#
+# Deliberately NOT setting ro.vendor.hw.felica: it is true only for radio=JPN,
+# and empty already behaves as false for every trigger and for the HAL.
+ro.vendor.hw.nfc=ese_st
+
 ro.vendor.mot.aac.richtap=1
 ro.vendor.mot.base_buildid=W1UX36H.72-45-10/376f8-24eba4
 ro.vendor.mot.hw.cli_density=360

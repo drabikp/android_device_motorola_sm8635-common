@@ -1,0 +1,13 @@
+# qcrild's thermal-engine client callback thread (comm="te-client-regcb", inside
+# libthermalclient.so) registers over /dev/socket/thermal-send-client. Without
+# this it is denied twice a SECOND, forever:
+#
+#   avc: denied { write } for comm="te-client-regcb" name="thermal-send-client"
+#        scontext=u:r:rild:s0 tcontext=u:object_r:vendor_thermal_socket:s0
+#        tclass=sock_file permissive=0
+#
+# QCOM's own policy grants vendor_thermal_socket only to vendor_thermal-engine;
+# the rild half is Motorola's, and stock has exactly this rule --
+#   (allow rild vendor_thermal_socket (sock_file (write)))
+# at vendor_sepolicy.cil:14327 in the W1UXS36H dump.
+allow rild vendor_thermal_socket:sock_file write;

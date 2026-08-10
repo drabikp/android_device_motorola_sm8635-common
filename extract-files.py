@@ -10,6 +10,7 @@ from extract_utils.fixups_blob import (
     blob_fixups_user_type,
 )
 from extract_utils.fixups_lib import (
+    lib_fixup_remove,
     lib_fixups,
     lib_fixups_user_type,
 )
@@ -21,6 +22,11 @@ from extract_utils.main import (
 namespace_imports = [
     'hardware/qcom-caf/sm8650',
     'hardware/qcom-caf/wlan',
+    # qcwcn declares its OWN namespace nested inside hardware/qcom-caf/wlan, so
+    # importing the parent is not enough. Needed because libwifi-hal-ctrl moved
+    # from a blob to a source build there (see proprietary-files.txt), and the
+    # blob cnss_diag still carries a DT_NEEDED on it.
+    'hardware/qcom-caf/wlan/qcwcn',
     'vendor/qcom/opensource/commonsys/display',
     'vendor/qcom/opensource/commonsys-intf/display',
     'vendor/qcom/opensource/dataservices',
@@ -29,6 +35,24 @@ namespace_imports = [
 
 lib_fixups: lib_fixups_user_type = {
     **lib_fixups,
+    # Drop ONLY this one dependency edge, from android.hardware.wifi-service.
+    #
+    # The blob is compiled against wifi-V1-ndk; AOSP's own wifi service uses V4.
+    # Soong pairs prebuilt and source under one module name, merges their graphs
+    # and refuses:
+    #   depends on multiple versions of the same aidl_interface:
+    #   android.hardware.wifi-V1-ndk-source, android.hardware.wifi-V4-ndk-source
+    # common.mk ships android.hardware.wifi-V1-ndk.vendor explicitly instead, so
+    # the library is still installed; only the soong edge goes away.
+    #
+    # This replaces a ;DISABLE_DEPS on the blob, which DID NOT WORK and is worth
+    # remembering: DISABLE_DEPS drops EVERY edge, so libwifi-system-iface stopped
+    # being installed into /vendor/lib64 and the HAL crash-looped at exec with
+    #   CANNOT LINK EXECUTABLE: library "libwifi-system-iface.so" not found
+    # The static pre-flash check missed it because libwifi-system-iface.so does
+    # exist in /system/lib64 -- which a vendor process cannot link. Per-library
+    # removal keeps every other edge intact.
+    'android.hardware.wifi-V1-ndk': lib_fixup_remove,
 }
 
 blob_fixups: blob_fixups_user_type = {
@@ -102,6 +126,23 @@ blob_fixups: blob_fixups_user_type = {
     # already defines it; the HAL is declared in sm8635-common/manifest.xml instead)
     'vendor/etc/vintf/manifest/android.hardware.wifi.supplicant.xml': blob_fixup()
         .regex_replace('<version>2</version>', '<version>5</version>'),
+    # vendor.qsap.location dies on SIGSYS every ~5s forever. minijail names the
+    # syscall outright:
+    #   E qsap_location: libminijail: blocked syscall: sched_get_priority_min
+    # Both policy files it loads are byte-identical to stock, so the caller is on
+    # OUR side: /vendor/lib64/libprocessgroup.so (reached via the stock blob
+    # libgps.utils.so) is the only ELF in the closure referencing it. Stock
+    # resolved libprocessgroup from /system/lib64 on Android 14; we ship the
+    # Android 16 vendor copy, whose TaskProfiles scheduler action makes all three
+    # of these calls -- so allow all three, or the SIGSYS just moves along by one.
+    'vendor/etc/seccomp_policy/gnss@2.0-qsap-location.policy': blob_fixup()
+        .regex_replace(
+            r'gettid: 1',
+            'gettid: 1\n'
+            'sched_get_priority_min: 1\n'
+            'sched_get_priority_max: 1\n'
+            'sched_setscheduler: 1',
+    ),
     'vendor/etc/vintf/manifest/bluetooth_audio.xml': blob_fixup()
         .regex_replace('<version>3</version>', '<version>5</version>'),
     'vendor/etc/vintf/manifest/face-default_3.xml': blob_fixup()
@@ -136,18 +177,24 @@ blob_fixups: blob_fixups_user_type = {
             'android.hardware.health-V2-ndk.so',
             'android.hardware.health-V4-ndk.so'
     ),
-    'vendor/bin/hw/wpa_supplicant': blob_fixup()
-        .replace_needed(
-            'android.hardware.wifi.supplicant-V2-ndk.so',
-            'android.hardware.wifi.supplicant-V5-ndk.so'
-        )
-        # Drop the keystore engine libs entirely. They exist so supplicant can use
-        # keystore-backed EAP certificates (enterprise Wi-Fi); they drag
-        # keymint-V1 into the graph against the platform's V4 and no version
-        # rewrite clears it. Normal WPA2/WPA3-PSK does not touch them.
-        # Cost: enterprise EAP-TLS with keystore-held certs will not work.
-        .remove_needed('libkeystore-engine-wifi-hidl.so')
-        .remove_needed('libkeystore-wifi-hidl.so'),
+    # There is NO wpa_supplicant fixup here any more, and there must not be one:
+    # the blob is gone from proprietary-files.txt and the binary is built from
+    # source (see the Wi-Fi block in BoardConfigCommon.mk).
+    #
+    # History, so the two dead ends are not re-walked. The old entry did a
+    # supplicant V2->V5 .replace_needed() plus
+    #     .remove_needed('libkeystore-engine-wifi-hidl.so')
+    #     .remove_needed('libkeystore-wifi-hidl.so')
+    # justified as "optional EAP support that drags keymint-V1 into the graph".
+    # Removing a DT_NEEDED does not remove the undefined symbols that came with
+    # it, so this made the binary unrunnable and Wi-Fi could never associate:
+    #     CANNOT LINK EXECUTABLE: cannot locate symbol "EVP_PKEY_from_keystore"
+    # Restoring both NEEDED entries got past that and straight into the real,
+    # unfixable problem: the blob also wants sk_dup/sk_num/sk_value, the bare
+    # BoringSSL stack API, which only Motorola's own older /vendor/lib64/
+    # libcrypto.so exports. Ours exports OPENSSL_sk_* instead. Shipping their
+    # libcrypto would replace the crypto library for every vendor process.
+    # Hence: source build, no fixup, no blob.
     # Bluetooth audio HAL: links bluetooth.audio-V3 while the graph resolves to
     # V5. Platform ships V1-V5.
     # Fingerprint FPC: links biometrics.common-V3 / fingerprint-V3 while the
@@ -172,13 +219,30 @@ blob_fixups: blob_fixups_user_type = {
             'android.hardware.biometrics.face-V3-ndk.so',
             'android.hardware.biometrics.face-V4-ndk.so'
     ),
-    # Wi-Fi HAL: links wifi-V1 while the graph resolves to V4. This was parked
-    # earlier; the widened sweep re-added it, and the fixup route works.
-    'vendor/bin/hw/android.hardware.wifi-service': blob_fixup()
-        .replace_needed(
-            'android.hardware.wifi-V1-ndk.so',
-            'android.hardware.wifi-V4-ndk.so'
-    ),
+    # NO wifi-service fixup. There used to be a
+    #     .replace_needed('android.hardware.wifi-V1-ndk.so',
+    #                     'android.hardware.wifi-V4-ndk.so')
+    # here, described as "the fixup route works". It did not. It made the HAL
+    # register and then die the moment the framework called into IWifiStaIface:
+    #
+    #   F libc: Pointer tag for 0x3 was truncated
+    #   F libc: Fatal signal 6 (SIGABRT) in tid ... (binder:..._2)
+    #   #01 free+104
+    #   #02 android.hardware.wifi-V4-ndk.so
+    #       IWifiStaIface_onTransact+3824
+    #
+    # i.e. the V4 NDK backend unparcelling a transaction laid out by a V1
+    # implementation and free()ing a garbage pointer. Textbook AIDL ABI break
+    # across a version bump -- the same failure as the keymint V3->V4 rewrite
+    # described below, and it presented the same way: works until something
+    # actually crosses the interface.
+    #
+    # The fix is the same one: ship what the blob was built against. common.mk
+    # declares android.hardware.wifi-V1-ndk.vendor, and the VINTF fragment
+    # declares IWifi/default with NO <version>, exactly as stock's
+    # vendor/etc/vintf/manifest/android.hardware.wifi-service.xml does.
+    # Verified live: IWifi and ISupplicant both register, wpa_supplicant runs,
+    # and wlan0 scans 2.4 GHz and 5 GHz.
     # NOTE: the keymint V3->V4 .replace_needed that used to live here has been
     # REMOVED. Do not put it back.
     #

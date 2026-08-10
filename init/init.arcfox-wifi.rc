@@ -22,18 +22,18 @@
 # libcld80211 + libnl). Note its 8-byte exported functions are CFI jump-table
 # thunks, NOT stubs -- do not read symbol size as evidence of a stub on this build.
 #
-# EXPECTED OUTCOME OF THIS CHANGE ALONE: the service starts and then ABORTS on
-# addService with status -3 (EX_ILLEGAL_ARGUMENT from meetsDeclarationRequirements),
-# because android.hardware.wifi is not yet VINTF-declared. That abort is the POINT:
-# it is the proof that the service gets all the way to registration, which is the
-# precondition for declaring it. This is the same two-step that took sensors from
-# a boot-killing crash loop to 68 working sensors:
-#   bc22  fix the crash        -> multihal reaches addService, fails -3
-#   bc23  then declare in VINTF -> registers
+# HISTORY, kept because the two-step is the method, not because it is pending:
+# when only this rc shipped (bc25), the service started and ABORTED on addService
+# with status -3 (EX_ILLEGAL_ARGUMENT from meetsDeclarationRequirements) because
+# android.hardware.wifi was not yet VINTF-declared. That abort was the POINT -- it
+# proved the service reaches registration, which is the precondition for declaring
+# it. Same two-step that took sensors from a boot-killing crash loop to 68 working
+# sensors (bc22 fix the crash -> reaches addService; bc23 declare -> registers).
 # Declaring before that proof is what cost this device its boot in bc18.
 #
-# So: do NOT add a VINTF fragment for android.hardware.wifi in the same cycle as
-# this file.
+# THAT STEP IS DONE. vintf/android.hardware.wifi-arcfox.xml shipped in bc26 and
+# IWifi/default registers. Do not read the paragraph above as an instruction to
+# withhold the fragment.
 service vendor.wifi_hal_legacy /vendor/bin/hw/android.hardware.wifi-service
     interface aidl android.hardware.wifi.IWifi/default
     class hal
