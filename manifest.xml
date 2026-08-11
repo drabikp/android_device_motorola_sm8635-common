@@ -155,11 +155,17 @@
          @1.2::IComponentStore/software with max-level="8" and this manifest is
          target-level 8, so it still applies. override="true" is deliberately not
          used either; that attribute is what was suppressing the QTI audio
-         codec2 store's default2 declaration all along. -->
+         codec2 store's default2 declaration all along.
+         THE VERSION IS @1.0, NOT @1.2. Declaring @1.2 (copied from the Dolby
+         fragment) was tested and FAILED: vendor.qti.media.c2@1.0-service logs
+         "Cannot register Codec2's IComponentStore default service..." and
+         crash-loops, and Codec2Client lists only "default2" "software". The
+         service registers at @1.0, and its sibling instance default2 from the
+         same QTI codebase is declared @1.0 in c2_manifest_vendor_audio.xml. -->
     <hal format="hidl">
         <name>android.hardware.media.c2</name>
         <transport>hwbinder</transport>
-        <fqname>@1.2::IComponentStore/default</fqname>
+        <fqname>@1.0::IComponentStore/default</fqname>
     </hal>
 
     <!-- motorola.hardware.camera.desktop REMOVED. It was declared here while
