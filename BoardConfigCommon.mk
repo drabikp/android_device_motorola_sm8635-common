@@ -382,8 +382,16 @@ BOARD_SHIPPING_API_LEVEL := 34
 # check_vintf fails image assembly with
 #   Fetch 'out/.../vendor/etc/vintf/manifest.xml': NAME_NOT_FOUND
 # Stock ships no manifest.xml: it uses SKU-selected manifest_pineapple.xml /
-# manifest_cliffs.xml chosen by ro.boot.product.vendor.sku, which reads empty
-# here. Use the pineapple (SM8635 platform) manifest as the device manifest.
+# manifest_cliffs.xml chosen by ro.boot.product.vendor.sku. Use the pineapple
+# (SM8635 platform) manifest as the device manifest.
+#
+# ⚠️ THIS FILE IS BUILD-TIME ONLY. The old note here claimed the SKU "reads
+# empty"; it does not -- ro.boot.product.vendor.sku is "cliffs" on this device,
+# so at runtime libvintf reads /vendor/etc/vintf/manifest_cliffs.xml and RETURNS
+# without ever reading manifest.xml (VintfObject.cpp:359-384 is a priority
+# chain, not a merge). Everything in DEVICE_MANIFEST_FILE is therefore inert on
+# the device and only feeds check_vintf. Runtime declarations MUST go in a
+# fragment under /vendor/etc/vintf/manifest/; see Android.bp.
 DEVICE_MANIFEST_FILE := $(COMMON_PATH)/manifest.xml
 
 # Framework matrix extension declaring the vendor HALs the stock image provides.

@@ -136,37 +136,24 @@
         <transport>hwbinder</transport>
         <fqname>@1.2::IMotTouch/default</fqname>
     </hal>
-    <!-- android.hardware.media.c2 IComponentStore/default.
-         THIS MUST NOT BE DROPPED. It used to be declared only by the two Dolby
-         codec2 VINTF fragments, which carried override="true" and listed
-         `default` and `software` alongside their own default3/default9. Removing
-         those fragments (see proprietary-files.txt for why) therefore deleted the
-         only declaration of `default` on the whole device.
-         That is not cosmetic: registerAsServiceInternal in
-         system/libhidl/transport/ServiceManagement.cpp refuses to register an
-         instance whose transport is not HWBINDER, i.e. one absent from the
-         manifest. libhidl says so outright: "must be in VINTF manifest in
-         order to register/get." So
-         vendor.qti.media.c2@1.0-service, which serves every hardware video codec
-         on this SoC, would have failed to register at all and the device would
-         have fallen back to software codecs while LOOKING fixed.
-         `software` is deliberately NOT re-declared here: AOSP's own
-         system/etc/vintf/manifest/manifest_media_c2_software.xml declares
-         @1.2::IComponentStore/software with max-level="8" and this manifest is
-         target-level 8, so it still applies. override="true" is deliberately not
-         used either; that attribute is what was suppressing the QTI audio
-         codec2 store's default2 declaration all along.
-         THE VERSION IS @1.0, NOT @1.2. Declaring @1.2 (copied from the Dolby
-         fragment) was tested and FAILED: vendor.qti.media.c2@1.0-service logs
-         "Cannot register Codec2's IComponentStore default service..." and
-         crash-loops, and Codec2Client lists only "default2" "software". The
-         service registers at @1.0, and its sibling instance default2 from the
-         same QTI codebase is declared @1.0 in c2_manifest_vendor_audio.xml. -->
-    <hal format="hidl">
-        <name>android.hardware.media.c2</name>
-        <transport>hwbinder</transport>
-        <fqname>@1.0::IComponentStore/default</fqname>
-    </hal>
+    <!-- android.hardware.media.c2 IComponentStore is NOT declared here, and must
+         not be. NOTHING IN THIS FILE REACHES THE DEVICE AT RUNTIME.
+         ro.boot.product.vendor.sku is "cliffs", and
+         VintfObject::fetchVendorHalManifest() (VintfObject.cpp:359-384) is a
+         PRIORITY CHAIN, not a merge: it reads
+         /vendor/etc/vintf/manifest_${vendor.sku}.xml and returns, only falling
+         back to manifest.xml when that file is absent or the SKU is empty. Stock
+         ships manifest_cliffs.xml, and we ship it verbatim as a blob, so this
+         file is inert. Proven on the running device: a unique probe HAL injected
+         into /vendor/etc/vintf/manifest.xml never appears in `vintf dm`, while
+         the same entry in a fragment does. Two commits (e2649eb, f475181) tried
+         to declare `default` here and neither had any effect; the second was
+         mis-diagnosed as a version problem when the file was simply not read.
+         The declaration now lives in a fragment, which IS always merged:
+         device/motorola/sm8635-common/vintf/manifest_media_c2.xml.
+         This file still has to exist -- it is DEVICE_MANIFEST_FILE, and
+         check_vintf fails image assembly without it -- so it is a BUILD-TIME
+         compatibility input only. Do not add runtime-critical declarations. -->
 
     <!-- motorola.hardware.camera.desktop REMOVED. It was declared here while
          /vendor/bin/hw/motorola.hardware.camera.desktop@2.0-service is labelled

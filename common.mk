@@ -258,6 +258,12 @@ PRODUCT_PACKAGES += \
 PRODUCT_PACKAGES += \
     android.hardware.sensors-arcfox.xml
 
+# Codec2 IComponentStore declarations. Without this fragment there is no
+# `default` store in the device manifest, vendor.qti.media.c2@1.0-service
+# crash-loops, and the device silently runs on software codecs only.
+PRODUCT_PACKAGES += \
+    manifest_media_c2.xml
+
 
 # adb. init.mmi.usb.rc blanks persist.sys.usb.config at load-bpf-programs and the
 # script that restores it (/vendor/bin/init.mmi.usb.sh) cannot run because it is

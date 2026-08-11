@@ -302,7 +302,15 @@ vendor/etc/seccomp_policy/c2audio.vendor.ext-arm.policy
 vendor/etc/seccomp_policy/c2audio.vendor.ext-arm64.policy
 vendor/etc/seccomp_policy/codec2.vendor.base-arm64.policy
 vendor/etc/seccomp_policy/codec2.vendor.ext-arm64.policy
-vendor/etc/vintf/manifest/c2_manifest_vendor_audio.xml
+# vendor/etc/vintf/manifest/c2_manifest_vendor_audio.xml -- REPLACED by our own
+# fragment, device/motorola/sm8635-common/vintf/manifest_media_c2.xml, which
+# declares this file's @1.0::IComponentStore/default2 alongside the HW store's
+# `default`. It cannot be shipped as-is: libvintf forbids two entries for one
+# HIDL HAL name with the same MAJOR version, so its @1.0 and the HW store's
+# @1.2 are mutually exclusive, and which one loses is decided by an UNSORTED
+# readdir() over the fragment directory -- with a failed merge aborting the
+# whole device manifest. The audio store still registers default2 against our
+# @1.2 declaration (minorAtLeast), verified live: 4 codec2::default2 codecs.
 vendor/lib64/libdsd2pcm.so
 vendor/lib64/libEvrcSwCodec.so
 vendor/lib64/libmmosal_vendor.so

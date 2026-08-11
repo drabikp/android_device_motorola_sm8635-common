@@ -1,0 +1,46 @@
+<!-- Codec2 IComponentStore declarations for this device.
+     BOTH stores are declared here, in ONE <hal>, at ONE version, on purpose.
+     Read the comment in Android.bp before changing anything below.
+
+     default  is served by vendor.qti.media.c2@1.0-service      (every HW video
+              codec on this SoC: avc/hevc/vp9/av1 decode, avc/hevc/heic encode)
+     default2 is served by vendor.qti.media.c2audio@1.0-service (QTI audio)
+
+     WHY ONE <hal> AT ONE VERSION: libvintf rejects a second manifest entry for
+     the same HIDL HAL name with the same MAJOR version, whatever the minor --
+     HalManifest::addingConflictingMajorVersion() keys its map on majorVer alone
+     ("Conflicting major version: 1.0 ... vs. 1.2"). So @1.2::.../default and the
+     stock fragment's @1.0::.../default2 cannot coexist. Worse, the loser is
+     decided by readdir() order: VintfObject::addDirectoryManifests() lists
+     /vendor/etc/vintf/manifest/ with FileSystemImpl::listFiles(), which is a
+     bare readdir with NO sort, and a fragment that fails to merge aborts the
+     WHOLE device manifest fetch. So the stock c2_manifest_vendor_audio.xml is
+     not shipped (see proprietary-files.txt) and its instance is declared here.
+
+     WHY @1.2 FOR BOTH: vendor.qti.media.c2@1.0-service registers `default` at
+     @1.2 -- observed, not assumed:
+       E HidlServiceManagement: Service android.hardware.media.c2@1.2::
+         IComponentStore/default must be in VINTF manifest in order to register.
+     Declaring @1.0 does NOT satisfy it: HalManifest::forEachInstanceOfVersion()
+     matches with Version::minorAtLeast(), so a manifest minor must be >= the
+     requested minor. The reverse is fine, which is why @1.2 also serves the
+     audio store's @1.0 registration of default2 -- verified live, default2
+     registers and contributes 4 codecs.
+
+     WHY override="true": it is the only way past shouldAdd()'s conflict check
+     (HalManifest::add() short-circuits on isOverride()), and it clears any
+     same-major entry a re-extracted stock fragment would reintroduce, making
+     this robust against readdir order rather than dependent on it.
+
+     `software` is deliberately NOT declared: AOSP's own
+     system/etc/vintf/manifest/manifest_media_c2_software.xml declares
+     @1.2::IComponentStore/software with max-level="8" from the FRAMEWORK
+     manifest, which is a separate manifest and cannot conflict with this one. -->
+<manifest version="1.0" type="device">
+    <hal format="hidl" override="true">
+        <name>android.hardware.media.c2</name>
+        <transport>hwbinder</transport>
+        <fqname>@1.2::IComponentStore/default</fqname>
+        <fqname>@1.2::IComponentStore/default2</fqname>
+    </hal>
+</manifest>

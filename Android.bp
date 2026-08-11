@@ -57,6 +57,23 @@ prebuilt_etc {
     vendor: true,
 }
 
+// Codec2 IComponentStore fragment. Same reason as the sensors one above, and it
+// was learned the hard way a second time: two commits declared
+// android.hardware.media.c2 IComponentStore/default in manifest.xml, and both
+// were inert, because ro.boot.product.vendor.sku is "cliffs" on this device so
+// libvintf reads manifest_cliffs.xml and RETURNS -- VintfObject.cpp:359-384 is a
+// priority chain, not a merge. Proof, on the running device: injecting a unique
+// probe HAL into /vendor/etc/vintf/manifest.xml never appears in `vintf dm`,
+// while the identical entry in a fragment does.
+//
+// See the file itself for why both stores are declared in one <hal> at @1.2.
+prebuilt_etc {
+    name: "manifest_media_c2.xml",
+    src: "vintf/manifest_media_c2.xml",
+    sub_dir: "vintf/manifest",
+    vendor: true,
+}
+
 // Restores the USB gadget config that init.mmi.usb.rc blanks, which is what
 // gives us adb. See the file itself for the full mechanism and the trigger
 // ordering that makes `on early-boot` the only correct place for it.
