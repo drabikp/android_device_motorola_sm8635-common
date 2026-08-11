@@ -14,6 +14,69 @@ vendor/lib64/libloadalgo_stub.so
 vendor/lib/rfsa/adsp/libDspIOProxy_skel.so
 vendor/lib/rfsa/adsp/libdsp_streamer_binning.so
 vendor/lib/rfsa/adsp/libhalide_hexagon_remote_skel.so
+
+# --- CDSP/ADSP remote skeletons: the DSP HALF of blobs we already ship -----
+# /vendor/lib64/rfs/dsp had ZERO entries here while stock ships 25 files, and
+# /vendor/lib/rfsa/adsp was missing 15. These are not host libraries: they are
+# loaded INTO the DSP over FastRPC, and the search path already includes both
+# directories (adsprpc logs it: ";/vendor/lib64/rfs/dsp;/vendor/lib/rfsa/adsp;").
+# The directory was simply empty.
+#
+# libbitml_nsp_{73nb,75na}_skel.so are the ones that broke the camera. They sit
+# next to their consumer, vendor/lib64/libbitmlenginev2.so (below), which names
+# both of them in FastRPC URI string constants with _dom=cdsp. We shipped the v1
+# skel (vendor/lib/rfsa/adsp/libbitml_nsp_skel.so, in the arcfox tree) and CamX
+# calls BITMLV2Register, so the domain open timed out at 1000ms -> FD engine
+# null -> "BITML init failed, fatal!" -> usecase bad state -> CHI recovery loop
+# -> flush blocked -> 4s CameraHalWatchdog -> forceRestartCameraserver/abort.
+# The v1 skel contains 0 bitml_nsp_v2_domains strings; the v2 skels contain 5.
+#
+# AUDIT RULE: for every *Stub.so shipped, its *Skel.so must be shipped too.
+# That check finds six more asymmetries (QnnHtpV73, SnpeHtpV73, fastcvdsp,
+# hdr, Q6MSFR_manager, eye_tracking_dsp_sample), all fixed here.
+# Not to be confused with the ~84 rfs_*_symlink modules in common.mk: those are
+# /vendor/rfs/{msm,mdm,apq}, modem RF calibration, an unrelated thing.
+vendor/lib64/rfs/dsp/libapn_dsp_skel.so
+vendor/lib64/rfs/dsp/libbitml_nsp_73nb_skel.so
+vendor/lib64/rfs/dsp/libbitml_nsp_75na_skel.so
+vendor/lib64/rfs/dsp/libdpp_engine_skel.so
+vendor/lib64/rfs/dsp/libdspCV_skel.so
+vendor/lib64/rfs/dsp/libevadsp.so
+vendor/lib64/rfs/dsp/libfastcvadsp.so
+vendor/lib64/rfs/dsp/libfastcvdsp_skel.so
+vendor/lib64/rfs/dsp/libhdr_skel.so
+vendor/lib64/rfs/dsp/libhme_dsp_skel.so
+vendor/lib64/rfs/dsp/libmobilenet_dsp_frc_networks.so
+vendor/lib64/rfs/dsp/libmobilenet_dsp_frc.so
+vendor/lib64/rfs/dsp/libnsp_ipc_cdsp_skel.so
+vendor/lib64/rfs/dsp/libqsegnetengine_dsp_skel.so
+vendor/lib64/rfs/dsp/libQ6MSFR_manager_skel.so
+vendor/lib64/rfs/dsp/libscveT2T_skel.so
+vendor/lib64/rfs/dsp/libvpp_ais_networks.so
+vendor/lib64/rfs/dsp/libVppAisQnnHtp.so
+vendor/lib64/rfs/dsp/libvpp_ais.so
+vendor/lib64/rfs/dsp/libVppFrcQnnHtp.so
+vendor/lib64/rfs/dsp/libvpp_frc.so
+vendor/lib64/rfs/dsp/libvpp_svc_skel.so
+vendor/lib64/rfs/dsp/libvpp_vqa_networks.so
+vendor/lib64/rfs/dsp/libvpt_action_recognition.so
+vendor/lib64/rfs/dsp/libworker_pool.so
+
+vendor/lib/rfsa/adsp/capi_us_detect2.so
+vendor/lib/rfsa/adsp/capi_us_gen2.so
+vendor/lib/rfsa/adsp/libarc_htp_driver_skel.so
+vendor/lib/rfsa/adsp/libCalculator_skel.so
+vendor/lib/rfsa/adsp/libdsp_streamer_qvrcam_receiver.so
+vendor/lib/rfsa/adsp/libeye_tracking_dsp_sample_skel.so
+vendor/lib/rfsa/adsp/libmlawbpostproc_dsp_skel.so
+vendor/lib/rfsa/adsp/libQnnHtpV73Skel.so
+vendor/lib/rfsa/adsp/libQnnHtpV73.so
+vendor/lib/rfsa/adsp/libqvr_cam_dsp_driver_skel.so
+vendor/lib/rfsa/adsp/libqvr_dsp_driver_skel.so
+vendor/lib/rfsa/adsp/libqvr_3dof_tracker_skel.so
+vendor/lib/rfsa/adsp/libSnpeHtpV73Skel.so
+vendor/lib/rfsa/adsp/libtracker_6dof_skel_8450.so
+vendor/lib/rfsa/adsp/nlc.so
 vendor/lib64/libadm.so
 vendor/lib64/libadsprpc.so
 vendor/lib64/libaualgo_foundation.so
@@ -2476,7 +2539,25 @@ vendor/etc/vintf/manifest/vendor.zuialarm.hardware.alarm@1.0-service.xml
 # aidl_interface". The file still installs; soong just stops modelling its
 # deps. This is how the official peridot device ships this same binary.
 vendor/bin/hw/vendor.qti.hardware.display.composer-service;DISABLE_DEPS
-vendor/bin/hw/vendor.qti.hardware.display.allocator-service
+# DISABLE_DEPS on the allocator too, for the SAME reason one line up, found the
+# hard way on 2026-08-11. This binary links graphics.allocator-V2-ndk while the
+# same-named SOURCE module (hardware/qcom-caf/sm8650/display/gralloc/Android.bp:166)
+# uses V1; soong merges prebuilt and source under the one name and then refuses
+# "multiple versions of the same aidl_interface", emitting NO ninja file at all.
+#
+# Rewriting the generated shared_libs V2->V1 by hand "works" and is what was done
+# before, but it is wrong twice over: check_elf_file then fails with
+#   DT_NEEDED "android.hardware.graphics.allocator-V2-ndk.so" is not specified in
+#   shared_libs
+# (it only ever passed because the check result was cached and a re-extract
+# invalidated it), and the edit lives in vendor/motorola, which is not a git repo
+# and is wiped by the next extract-files.py.
+#
+# Dropping the dep edges is safe here: both allocator-V1-ndk.so and
+# allocator-V2-ndk.so are installed to /vendor/lib64 regardless, V2 arriving via
+# libcommonchiutils, so the binary resolves at runtime. Verified on the running
+# device, where this service is `running` with both libs present.
+vendor/bin/hw/vendor.qti.hardware.display.allocator-service;DISABLE_DEPS
 vendor/etc/init/vendor.qti.hardware.display.composer-service.rc
 vendor/etc/init/vendor.qti.hardware.display.allocator-service.rc
 vendor/etc/init/vendor.qti.hardware.display.demura-service.rc
