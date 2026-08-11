@@ -1852,6 +1852,96 @@ vendor/lib64/com.qualcomm.mcx.nonlinearmapper.so
 vendor/lib64/ftm_fm_lib.so
 vendor/lib64/libadspd.so
 vendor/lib64/libagmmixer.so
+
+# --- AUDIO: the whole stack was DEAD and nobody had noticed --------------
+# dumpsys media.audio_policy read "AudioPolicyManager: 0x0" -- the policy
+# manager was never constructed, so there was no audio output, no input, and
+# no primary module, on every boot so far. init.svc.vendor.audio-hal said
+# 'running' the whole time, which is why it went unnoticed.
+#
+# Two separate gaps, both of them ours:
+#
+# 1. THE INTERFACE HALF OF TWO HIDL PAIRS. We shipped
+#    vendor.qti.hardware.{pal,AGMIPC}@1.0-impl.so but NOT the @1.0.so they
+#    implement, so audio.primary.pineapple.so could not be dlopen'ed at all:
+#      E vndksupport: Could not load /vendor/lib64/hw/audio.primary.pineapple.so
+#        dlopen failed: library "vendor.qti.hardware.pal@1.0.so" not found
+#      E AudioFlinger: loadHwModule() error -19 loading module primary
+#    Same class of miss as the *Stub.so-without-*Skel.so audit in this file.
+#    A transitive DT_NEEDED closure over the audio stack (86 libraries, rooted
+#    at audio.primary.pineapple.so, libar-pal, libagm*, both -impl libs and
+#    libaudiohal) found EXACTLY these two missing and nothing else.
+#
+#    ;MAKE_COPY_RULE_ONLY is REQUIRED on both. Each name is ALSO an in-tree source
+#    hidl_interface (hardware/qcom-caf/sm8650/audio/pal/ipc/HwBinders/interfaces/
+#    pal/1.0 and .../agm/ipc/HwBinders/agm_ipc_client), so a normal prebuilt module
+#    of the same name kills soong bootstrap outright with
+#      partition is different: system(vendor.qti.hardware.pal@1.0)
+#        != vendor(prebuilt_vendor.qti.hardware.pal@1.0)
+#    and no ninja file is produced at all. Those hidl_interface modules declare no
+#    vendor_available, so there is no .vendor variant to put in PRODUCT_PACKAGES
+#    either -- kati rejects it as a non-existent module. MAKE_COPY_RULE_ONLY emits
+#    a plain PRODUCT_COPY_FILES rule and NO soong module, so there is no name to
+#    collide and stock's own .so is what ships -- which is also the exact artifact
+#    the fix was verified with.
+#
+# 2. ALL OF THE AUDIO CONFIGURATION AND CALIBRATION DATA. vendor/etc/acdbdata
+#    and vendor/etc/audio had ZERO entries here against stock's 22 and 7.
+#    Adding only the two libs got audio.primary to load and then SIGSEGV in
+#    ResourceManager::init_audio() -> agm_session_register_cb ->
+#    session_obj_get_from_pool on a NULL mutex, because the files that code
+#    reads were not there:
+#      sku_cliffs/resourcemanager_cliffs_mtp.xml  <- read by init_audio()
+#      sku_cliffs/audio_policy_configuration.xml  <- hence "the policy
+#         configuration does not declare a primary output"
+#      sku_cliffs/mixer_paths_cliffs_mtp.xml, cliffs_mtp/MTP_acdb_cal.acdb
+#         (the ADSP calibration database for this exact SKU)
+#    acdbdata also carries the haptics waveforms and the FFV models.
+#
+# VERIFIED LIVE, over adb remount, before this was committed:
+#   AudioPolicyManager: 0x0  ->  AudioPolicyManager Dump: 0xb400007d6abd5010
+#   speaker device present and current; the primary module loads.
+# And it fixed VIDEO RECORDING, which was never a camera bug: CameraX's
+# Recorder.setupAudio() threw UnsupportedOperationException out of
+# AudioSource.<init> ('sample rate 44100, channel count 1, audio format 2 is
+# not supported' -- because AudioSystem had no policy manager), and
+# startRecording() aborted BEFORE mVideoEncoder.start(). The camera then fed
+# an encoder input surface nobody drained, GraphicBufferSource hit
+# 'max acquired buffer count reached: 17 (max 16)', and CamX starved on
+# OutputPortId9_Video and died. The gralloc starvation was three steps
+# downstream of a missing .so. With audio fixed, a 15s recording produces a
+# valid mp4: h264 1920x1080 + AAC 48kHz mono, ZERO starvation errors.
+vendor/etc/acdbdata/cliffs_mtp/MTP_acdb_cal.acdb
+vendor/etc/acdbdata/cliffs_mtp/MTP_workspaceFileXml.qwsp
+vendor/etc/acdbdata/ffv_models/fai__4.8.14_0.0__3.0.0_0.0__3.1.1_0.0__3.2.0_0.1__eai_3.4_enpuv4.pmd
+vendor/etc/acdbdata/ffv_models/ffv__5.0.1_0.1__eai_2.10_enpu3.pmd
+vendor/etc/acdbdata/ffv_models/ffv__5.0.1_0.1__3.0.0_0.0__eai_2.10_enpu3.pmd
+vendor/etc/acdbdata/ffv_models/ffv__6.2.5_0.1__eai_3.4__enpu_v4.pmd
+vendor/etc/acdbdata/ffv_models/ffv__7.0.1_0.1__eai_3.4_enpu_v4.pmd
+vendor/etc/acdbdata/haptics_data/click.pcm
+vendor/etc/acdbdata/haptics_data/double_click.pcm
+vendor/etc/acdbdata/haptics_data/heavy_click.pcm
+vendor/etc/acdbdata/haptics_data/pop.pcm
+vendor/etc/acdbdata/haptics_data/reserved_1.pcm
+vendor/etc/acdbdata/haptics_data/reserved_2.pcm
+vendor/etc/acdbdata/haptics_data/reserved_3.pcm
+vendor/etc/acdbdata/haptics_data/reserved_4.pcm
+vendor/etc/acdbdata/haptics_data/reserved_5.pcm
+vendor/etc/acdbdata/haptics_data/reserved_6.pcm
+vendor/etc/acdbdata/haptics_data/reserved_7.pcm
+vendor/etc/acdbdata/haptics_data/reserved_8.pcm
+vendor/etc/acdbdata/haptics_data/texture_tick.pcm
+vendor/etc/acdbdata/haptics_data/thud.pcm
+vendor/etc/acdbdata/haptics_data/tick.pcm
+vendor/etc/audio/sku_cliffs/audio_effects.xml
+vendor/etc/audio/sku_cliffs/audio_policy_configuration_tmo.xml
+vendor/etc/audio/sku_cliffs/audio_policy_configuration.xml
+vendor/etc/audio/sku_cliffs/mixer_paths_cliffs_mtp.xml
+vendor/etc/audio/sku_cliffs_qssi/audio_policy_configuration.xml
+vendor/etc/audio/sku_cliffs/resourcemanager_cliffs_mtp.xml
+vendor/etc/audio/sku_pineapple_qssi/audio_policy_configuration.xml
+vendor/lib64/vendor.qti.hardware.AGMIPC@1.0.so;MODULE_SUFFIX=-arcfox
+vendor/lib64/vendor.qti.hardware.pal@1.0.so;MODULE_SUFFIX=-arcfox
 vendor/lib64/libAlacSwDec.so
 vendor/lib64/libanc_supervq.so
 vendor/lib64/libaodoptfeature.so
