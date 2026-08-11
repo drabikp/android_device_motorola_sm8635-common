@@ -597,6 +597,49 @@ vendor/etc/qcril_database/upgrade/ecc/6_version_qcrildb.sql
 vendor/etc/qcril_database/upgrade/ecc/7_version_qcrildb.sql
 vendor/etc/qcril_database/upgrade/ecc/8_version_qcrildb.sql
 vendor/etc/qcril_database/upgrade/ecc/9_version_qcrildb.sql
+
+# --- qcril database: the REST of the upgrade chain ------------------------
+# The list here was truncated: 45 of stock's 72 files. The cut is not random,
+# it is a version boundary -- ecc stopped at 46_version_qcrildb.sql (stock goes
+# to 58), config had none of 0006..0015, other was missing five. So the blob
+# list was built from an OLDER firmware's file set and never caught up when
+# Motorola added upgrade steps.
+#
+# These are sequential schema migrations for /vendor/etc/qcril_database/qcrilNr.db:
+# ecc/ = emergency call codes per MCC/MNC, config/ = RIL feature config,
+# other/ = property and module tables. A truncated chain means the DB never
+# reaches the version the RIL expects. vendor.radio.db_state reads 3 on device.
+#
+# HONEST SCOPE: this is stock parity and a real defect on its own terms, but it
+# is NOT shown to fix the registration failure. Do not report it as the radio fix
+# without measuring registration before and after.
+vendor/etc/qcril_database/upgrade/config/0006.0_config.sql
+vendor/etc/qcril_database/upgrade/config/0007.0_config.sql
+vendor/etc/qcril_database/upgrade/config/0008.0_config.sql
+vendor/etc/qcril_database/upgrade/config/0009.0_config.sql
+vendor/etc/qcril_database/upgrade/config/0010.0_config.sql
+vendor/etc/qcril_database/upgrade/config/0011.0_config.sql
+vendor/etc/qcril_database/upgrade/config/0012.0_config.sql
+vendor/etc/qcril_database/upgrade/config/0013.0_config.sql
+vendor/etc/qcril_database/upgrade/config/0014.0_config.sql
+vendor/etc/qcril_database/upgrade/config/0015.0_config.sql
+vendor/etc/qcril_database/upgrade/ecc/47_version_qcrildb.sql
+vendor/etc/qcril_database/upgrade/ecc/48_version_qcrildb.sql
+vendor/etc/qcril_database/upgrade/ecc/49_version_qcrildb.sql
+vendor/etc/qcril_database/upgrade/ecc/50_version_qcrildb.sql
+vendor/etc/qcril_database/upgrade/ecc/51_version_qcrildb.sql
+vendor/etc/qcril_database/upgrade/ecc/52_version_qcrildb.sql
+vendor/etc/qcril_database/upgrade/ecc/53_version_qcrildb.sql
+vendor/etc/qcril_database/upgrade/ecc/54_version_qcrildb.sql
+vendor/etc/qcril_database/upgrade/ecc/55_version_qcrildb.sql
+vendor/etc/qcril_database/upgrade/ecc/56_version_qcrildb.sql
+vendor/etc/qcril_database/upgrade/ecc/57_version_qcrildb.sql
+vendor/etc/qcril_database/upgrade/ecc/58_version_qcrildb.sql
+vendor/etc/qcril_database/upgrade/other/0002_version_add_wps_config_qcrilnr.sql
+vendor/etc/qcril_database/upgrade/other/0003_version_update_wps_config_qcrilnr.sql
+vendor/etc/qcril_database/upgrade/other/0006_version_change_property_table_qcrilnr.sql
+vendor/etc/qcril_database/upgrade/other/0014_version_update_modules.sql
+vendor/etc/qcril_database/upgrade/other/0015_version_add_iccid_clir_pref_table.sql
 vendor/etc/seccomp_policy/atfwd@2.0.policy
 vendor/etc/seccomp_policy/qcrilnr@2.0.policy
 vendor/etc/ssg/ta_config.json
