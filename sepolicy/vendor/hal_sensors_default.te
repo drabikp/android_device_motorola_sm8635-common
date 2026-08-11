@@ -25,3 +25,14 @@
 # through states 1-5 and lands on state 6 OPENED_HALL (lid-only, evaluated last):
 # inner primary, outer disabled -- the correct open-device behaviour.
 allow hal_sensors_default uhid_device:chr_file rw_file_perms;
+
+# vendor.camera.led.torchmode, moved off vendor_default_prop by property.te so
+# that the camera provider can set it at all. THIS GRANT IS THE OTHER HALF OF
+# THAT CHANGE, not a new capability: sensors.qsh.so is one of only two binaries
+# in the firmware that reference the string, and before the relabel it read the
+# property for free through the blanket domain.te:508 vendor_default_prop grant.
+# Without this the sensors HAL silently loses a read it has today.
+#
+# `set` as well as `get` because that is what stock gives it
+# (vendor_sepolicy.cil:14108-14109), not because a write was observed here.
+set_prop(hal_sensors_default, vendor_camera_ledtorchmode_prop)

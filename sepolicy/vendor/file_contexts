@@ -229,3 +229,21 @@
 # type are stock's (vendor_file_contexts:593, :859).
 /data/vendor/\.face(/.*)?                       u:object_r:tetras_config_file:s0
 /data/vendor/tetras_data/config(/.*)?               u:object_r:tetras_config_file:s0
+
+
+# CAMERA CALIBRATION AND IMAGER DATA. These three labels only move directories
+# off the generic mnt_vendor_file / vendor_data_file fallthroughs so that
+# hal_camera_default can be granted them by name; the grants themselves, the
+# captured denials, and an explicit statement of what has NOT been verified are
+# all in hal_camera_default.te. Paths and types are stock's, verbatim from its
+# vendor_file_contexts:763, :727 and :1005.
+#
+# Both /data paths already exist on the device (owner camera:camera) and are
+# currently vendor_data_file, so init's post-fs-data restorecon picks up the new
+# labels on the next boot after the file_contexts hash changes. There is NO
+# type_transition here and stock has none either, so if /data is wiped and the
+# HAL recreates the directories itself they come back as vendor_data_file and the
+# denial returns -- stock has that same hole, do not mistake this for complete.
+/mnt/vendor/persist/camera(/.*)?                u:object_r:persist_camera_file:s0
+/data/vendor/misc/imager(/.*)?                  u:object_r:imager_data_file:s0
+/data/vendor/misc/imager/metadata(/.*)?         u:object_r:imager_metadata_file:s0

@@ -857,7 +857,11 @@ vendor/bin/hw/android.hardware.secure_element-service.qti
 vendor/bin/hw/android.hardware.thermal-service.qti
 vendor/bin/hw/capabilityconfigstoretest
 vendor/bin/hw/com.motorola.thermalstatus@service
-vendor/bin/hw/dolbycodec2
+# vendor/bin/hw/dolbycodec2 -- the IComponentStore/default3 server (Dolby
+# Vision). Dropped together with its VINTF fragment; the evidence is in the
+# block under vendor/etc/vintf/manifest/. Labelling it instead does not help:
+# it aborts on its first HIDL transaction because c2.dolby.client.so needs a
+# libcodec2_hidl@1.0 symbol our AOSP-built copy does not export.
 vendor/bin/hw/ese_upgrade
 # hostapd is DELIBERATELY NOT a blob any more -- built from source, exactly like
 # wpa_supplicant and for the identical reason: Motorola's binary imports sk_dup,
@@ -900,7 +904,13 @@ vendor/bin/hw/motorola.hardware.wireless.wlc-service
 vendor/bin/hw/motosxf
 vendor/bin/hw/qvrservice
 vendor/bin/hw/vendor.dolby.dms.service
-vendor/bin/hw/vendor.dolby.media.c2@1.0-service
+# vendor/bin/hw/vendor.dolby.media.c2@1.0-service -- the IComponentStore/default9
+# server (Dolby AC4/DDP). Dropped together with its VINTF fragment; see the block
+# under vendor/etc/vintf/manifest/. This one DOES start and register when run by
+# hand, but its store is only reachable through the same declared-and-unserved
+# manifest entry that hangs mediaserver, and its component libs
+# (libcodec2_soft_ac4dec/ddpdec) are in the same untested blob-ABI boat as the
+# Dolby Vision ones. Not worth keeping half a Dolby stack for.
 vendor/bin/hw/vendor.qti.camera.provider-service_64
 vendor/bin/hw/vendor.qti.hardware.alarm-service
 vendor/bin/hw/vendor.qti.hardware.display.color-service
@@ -938,7 +948,8 @@ vendor/etc/init/nfc-service-st.rc
 vendor/etc/init/qmipriod.debug.rc
 vendor/etc/init/qvrd_vndr.rc
 vendor/etc/init/sxrd.rc
-vendor/etc/init/vendor.dolby.media.c2.dv@1.0-service.rc
+# vendor/etc/init/vendor.dolby.media.c2.dv@1.0-service.rc -- starts dolbycodec2,
+# which is gone; see vendor/etc/vintf/manifest/.
 vendor/etc/init/vendor.mmi.carrier.rc
 vendor/etc/init/vendor.qsap.location.rc
 vendor/etc/init/vendor.qsap.qapeservice.rc
@@ -982,8 +993,87 @@ vendor/etc/vintf/manifest/qcrilhook-saidl.xml
 vendor/etc/vintf/manifest/qms-saidl.xml
 vendor/etc/vintf/manifest/secure_element-service.xml
 vendor/etc/vintf/manifest/vendor.arcsoft.hardware.camera.postproc.xml
-vendor/etc/vintf/manifest/vendor.dolby.media.c2.v1.2@1.0-service.xml
-vendor/etc/vintf/manifest/vendor.dolby.vision.media.c2.v12@1.0-service.xml
+# THE DOLBY CODEC2 STORES ARE DELIBERATELY GONE. THIS IS THE CAMERA FIX.
+#
+# These two fragments were the ONLY thing on the whole device that declared
+#   android.hardware.media.c2@1.0::IComponentStore/default3   (Dolby Vision)
+#   android.hardware.media.c2@1.0::IComponentStore/default9   (Dolby audio)
+# and NOTHING served either one. libcodec2_client builds its service list from
+# the VINTF device manifest (hwservicemanager's listManifestByInterface), so
+# every process that touches MediaCodec called the BLOCKING getService() on both
+# names and never came back. mediaserver was the first casualty and it holds the
+# MediaCodecList mutex while it does it, so it took every other client with it:
+#
+#   $ debuggerd $(pidof mediaserver)
+#   "binder:2442_1"  MediaCodecList::InstanceCache::getLocalInstance  (holding
+#                    the mutex, inside Codec2Client::ListComponents)
+#   HidlServiceManagement: Waited one second for
+#       android.hardware.media.c2@1.0::IComponentStore/default3   (tid 2682)
+#   HidlServiceManagement: Waited one second for
+#       android.hardware.media.c2@1.0::IComponentStore/default9   (tid 10265)
+#   ... repeating once a second since boot, forever
+#
+#   $ debuggerd $(pidof screenrecord)      # any MediaCodec client at all
+#   MediaCodecList::InstanceCache::getRemoteInstance
+#   BpMediaPlayerService::getCodecList          <- blocked on mediaserver
+#
+# THE CAMERA CONNECTION, because it is not obvious. org.lineageos.aperture
+# crashed with "java.lang.IllegalStateException: Camera configuration is null".
+# That is a SYMPTOM, not the fault: CameraViewModel._cameraConfiguration is only
+# ever assigned by initializeCameraConfiguration(), which waits on
+# CameraRepository.cameras, and that flow was wedged in the SAME place --
+#
+#   $ debuggerd -j $(pidof org.lineageos.aperture)
+#   "DefaultDispatcher-worker-5"
+#     android.media.MediaCodec.native_setup
+#     MediaCodec.createEncoderByType
+#     androidx.camera.video.internal.BackupHdrProfileEncoderProfilesProvider
+#     androidx.camera.video.Recorder.getVideoCapabilitiesInternal
+#     org.lineageos.aperture.repositories.CameraRepository.mapToCamera
+#
+# CameraX had already loaded the metadata for both logical cameras ("Loaded
+# metadata for CameraId-0/1", "Device Level: INFO_SUPPORTED_HARDWARE_LEVEL_3")
+# BEFORE this. The camera HAL was never the problem; the app hangs building the
+# video-recording capabilities of each camera, the configuration stays null, and
+# the first UI action that calls updateConfiguration() then error()s. Nothing in
+# the process ever reaches bindToLifecycle, which is why dumpsys media.camera
+# shows "Active Camera Clients: []" and the preview is black.
+#
+# WHY NOT JUST LABEL THE TWO SERVICES AND LET THEM RUN. That was the first
+# instinct -- both binaries are labelled vendor_file here so init refuses them,
+# exactly like the FPC and face HALs. It is the wrong fix, and this was measured
+# rather than guessed. With `setenforce 0` and both binaries started by hand:
+#
+#   vendor.dolby.media.c2@1.0-service -> registers default9, survives.
+#   dolbycodec2                       -> registers default3, then ABORTS on the
+#     first listComponents() transaction:
+#       F DolbyStore: could not dlopen c2.dolby.hevc.dec.so: dlopen failed:
+#         cannot locate symbol "..._ZN7android8hardware5media2c24V1_05utils6
+#         objcpy...BufferPoolSenderE" referenced by "c2.dolby.client.so"
+#     and mediaserver then died with it:
+#       Abort message: 'Check failed: transResult.isOk() Codec2 service
+#                       "default3"does not have IConfigurable.'
+#
+# That missing symbol is the recurring blob-ABI story on this tree, and it is
+# unfixable from here: objcpy(WorkBundle*, list<unique_ptr<C2Work>>&,
+# BufferPoolSender*) IS exported by stock's /vendor/lib64/libcodec2_hidl@1.0.so
+# (368248 bytes, a blob) and is NOT exported by ours (271576 bytes), because
+# ours is the AOSP 16 module -- libcodec2_hidl@1.0 is not in this file, the
+# platform installs it. Shipping stock's copy to satisfy a Dolby Vision decoder
+# would swap the codec2 vendor ABI out from under vendor.qti.media.c2@1.0-service
+# and media.audio.qc.codec, which are the codecs that actually matter and which
+# work today. So: declare nothing we do not serve. Dolby Vision decode and Dolby
+# AC4/DDP decode are lost, which is the normal state of affairs for a port that
+# ships no Dolby framework side anyway; every HW codec that matters lives behind
+# IComponentStore/default (vendor.qti.media.c2@1.0-service) and is untouched.
+#
+# NOT REMOVED, on purpose: vendor/etc/media_codecs_c2_dolby_vision.xml and
+# media_codecs_dolby_audio.xml. media_codecs_c2.xml <Include>s both, and a
+# missing href is a parse error for the whole codec list. Codec2InfoBuilder only
+# emits codecs it also found traits for, so with the stores gone these two files
+# contribute nothing and cost nothing. The Dolby DMS audio-effects service
+# (vendor.dolby.dms.service and its libs) is untouched too -- it declares no
+# IComponentStore instance and is not part of this bug.
 vendor/etc/vintf/manifest/vendor.motorola.hardware.sxf.service.xml
 vendor/etc/vintf/manifest/vendor.qti.camera.aon-impl.xml
 vendor/etc/vintf/manifest/vendor.qti.camera.offlinecamera-impl.xml
@@ -1160,12 +1250,13 @@ vendor/lib64/libcamxfdengine.so
 vendor/lib64/libcamxstatscore.so
 vendor/lib64/libmot_afd.so
 vendor/lib64/libmotoisdataqueue.so
-vendor/lib64/c2.dolby.store.so
+# vendor/lib64/c2.dolby.store.so -- dolbycodec2's component store, gone with it.
 vendor/lib64/com.qti.camx.chiiqutils.so
 vendor/lib64/libbitmlenginev2.so
 vendor/lib64/vendor.qti.hardware.camera.aon-service-impl.so
 vendor/lib64/vendor.qti.hardware.camera.postproc@1.0-service-impl.so
-vendor/lib64/libcodec2_store_dolby.so
+# vendor/lib64/libcodec2_store_dolby.so -- vendor.dolby.media.c2@1.0-service's
+# component store, gone with it.
 vendor/lib64/com.qti.qseeaon.so
 vendor/lib64/com.qti.qseeutils.so
 vendor/lib64/libqshcamera.so
@@ -1637,9 +1728,13 @@ vendor/lib64/com.qti.feature2.gs.sm8650.so
 vendor/lib64/com.qti.feature2.metadataserializer.so
 vendor/lib64/com.qti.settings.sm8650.so
 vendor/lib64/com.qualcomm.mcx.nonlinearmapper.so
-vendor/lib64/c2.dolby.client.so;DISABLE_CHECKELF
-vendor/lib64/c2.dolby.hevc.dec.so;DISABLE_CHECKELF
-vendor/lib64/c2.dolby.hevc.sec.dec.so;DISABLE_CHECKELF
+# The Dolby Vision decoders and their client shim, dlopen'ed by c2.dolby.store.so
+# and gone with it. Note what the three DISABLE_CHECKELF tags were hiding: they
+# were added to silence exactly the unresolved libcodec2_hidl@1.0 symbol that
+# later aborted dolbycodec2 at runtime. The check was right.
+#   vendor/lib64/c2.dolby.client.so;DISABLE_CHECKELF
+#   vendor/lib64/c2.dolby.hevc.dec.so;DISABLE_CHECKELF
+#   vendor/lib64/c2.dolby.hevc.sec.dec.so;DISABLE_CHECKELF
 vendor/lib64/ftm_fm_lib.so
 vendor/lib64/libadspd.so
 vendor/lib64/libagmmixer.so
@@ -1671,8 +1766,11 @@ vendor/lib64/libclstc_algorithm_adapter.so
 vendor/lib64/libclstc_gcp_adapter.so
 vendor/lib64/libclstc_tm.so
 vendor/lib64/libCneAppJni.so
-vendor/lib64/libcodec2_soft_ac4dec.so
-vendor/lib64/libcodec2_soft_ddpdec.so
+# The Dolby AC4 and DD+ decoders, dlopen'ed by libcodec2_store_dolby.so and gone
+# with it. Nothing else in the dump references either (the mediaswcodec software
+# store loads its own libcodec2_soft_* from the APEX, not from /vendor).
+#   vendor/lib64/libcodec2_soft_ac4dec.so
+#   vendor/lib64/libcodec2_soft_ddpdec.so
 vendor/lib64/libDcfHalFramework.so
 vendor/lib64/libDcfHalLogger.so
 vendor/lib64/libDcfHalQtiMutex.so
@@ -1681,9 +1779,15 @@ vendor/lib64/libdeep_raw_models.so
 vendor/lib64/libdeep_raw.so
 vendor/lib64/libdiagjni.so
 vendor/lib64/libdlbpreg.so
-vendor/lib64/libdolbydecoderprocessor.so
-vendor/lib64/libdolbyeglcore.so
-vendor/lib64/libdolbyottcameracontrol.so
+# The Dolby Vision decoder's own back end. libdolbydecoderprocessor.so is needed
+# only by c2.dolby.hevc{,.sec}.dec.so, libdolbyeglcore.so and
+# libdolbyottcameracontrol.so only by libdolbydecoderprocessor.so -- verified by
+# scanning every ELF in the stock dump -- so all three orphan together.
+# libdolbyottcameracontrol.so is NOT a camera library despite the name; it is
+# Dolby's OTT playback tone-mapping control.
+#   vendor/lib64/libdolbydecoderprocessor.so
+#   vendor/lib64/libdolbyeglcore.so
+#   vendor/lib64/libdolbyottcameracontrol.so
 vendor/lib64/libdpp_manager.so
 vendor/lib64/libDspIOProxy_stub.so
 vendor/lib64/libDxHdcp_ext.so
@@ -2289,7 +2393,8 @@ vendor/etc/init/shsusrd.rc
 vendor/etc/init/ssgtzd.rc
 vendor/etc/init/tlpd.rc
 vendor/etc/init/tzlogd.rc
-vendor/etc/init/vendor.dolby.media.c2@1.0-service.rc
+# vendor/etc/init/vendor.dolby.media.c2@1.0-service.rc -- starts the default9
+# store, which is gone; see vendor/etc/vintf/manifest/.
 vendor/etc/init/vendor.dpmd.rc
 vendor/etc/init/vendor.qti.camera.provider-service_64.rc
 vendor/etc/init/vendor.qti.hardware.alarm-service.rc

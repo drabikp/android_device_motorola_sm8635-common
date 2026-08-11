@@ -70,3 +70,23 @@ type persist_batt_file, file_type, vendor_persist_type;
 # (/data/vendor/tetras_data/config). See hal_face_default.te for why the sibling
 # tetras_debug_file (the raw-image dump paths) is deliberately NOT declared.
 type tetras_config_file, file_type, data_file_type;
+
+# ---------------------------------------------------------------------------
+# Camera calibration and metadata. See hal_camera_default.te for the denials and
+# for the honest statement of what these have and have not been shown to fix.
+# ---------------------------------------------------------------------------
+
+# /mnt/vendor/persist/camera -- this unit's factory camera calibration. Not a
+# theoretical directory; it is populated on this device:
+#   dualcal  focus  gyro_compat  iqtuning  ledcal  mot_gyrocal  mot_ledcal
+# Stock type and path: vendor_file_contexts:763. Ours currently leaves the whole
+# tree on the generic mnt_vendor_file, which hal_camera_default cannot read.
+type persist_camera_file, file_type, vendor_persist_type;
+
+# /data/vendor/misc/imager and its metadata/ subdirectory -- the camera HAL's own
+# runtime imager store (owner camera:camera on this device, and already present).
+# Stock splits it into two types, vendor_file_contexts:727 and :1005, and so does
+# this; the split matters because stock grants the parent read/write but the
+# metadata directory create/unlink as well.
+type imager_data_file, file_type, data_file_type;
+type imager_metadata_file, file_type, data_file_type;

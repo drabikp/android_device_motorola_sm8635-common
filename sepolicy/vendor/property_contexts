@@ -57,3 +57,8 @@ ro.vendor.touch.                u:object_r:vendor_mot_touchscreen_prop:s0
 # The face HAL's control namespace. vendor.faceauth.cli.lidstate is the fold
 # state the cover-display camera path keys off; the bare prefix covers it.
 vendor.faceauth.                u:object_r:vendor_tetras_prop:s0
+
+# Set by the camera provider, read back by the sensors HAL (ALS compensation
+# while the torch is lit). Stock: vendor_property_contexts:632. See property.te
+# for why relabelling ONE property is safe where relabelling a prefix is not.
+vendor.camera.led.torchmode     u:object_r:vendor_camera_ledtorchmode_prop:s0

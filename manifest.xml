@@ -136,12 +136,45 @@
         <transport>hwbinder</transport>
         <fqname>@1.2::IMotTouch/default</fqname>
     </hal>
+    <!-- android.hardware.media.c2 IComponentStore/default.
+         THIS MUST NOT BE DROPPED. It used to be declared only by the two Dolby
+         codec2 VINTF fragments, which carried override="true" and listed
+         `default` and `software` alongside their own default3/default9. Removing
+         those fragments (see proprietary-files.txt for why) therefore deleted the
+         only declaration of `default` on the whole device.
+         That is not cosmetic: registerAsServiceInternal in
+         system/libhidl/transport/ServiceManagement.cpp refuses to register an
+         instance whose transport is not HWBINDER, i.e. one absent from the
+         manifest. libhidl says so outright: "must be in VINTF manifest in
+         order to register/get." So
+         vendor.qti.media.c2@1.0-service, which serves every hardware video codec
+         on this SoC, would have failed to register at all and the device would
+         have fallen back to software codecs while LOOKING fixed.
+         `software` is deliberately NOT re-declared here: AOSP's own
+         system/etc/vintf/manifest/manifest_media_c2_software.xml declares
+         @1.2::IComponentStore/software with max-level="8" and this manifest is
+         target-level 8, so it still applies. override="true" is deliberately not
+         used either; that attribute is what was suppressing the QTI audio
+         codec2 store's default2 declaration all along. -->
     <hal format="hidl">
-        <name>motorola.hardware.camera.desktop</name>
+        <name>android.hardware.media.c2</name>
         <transport>hwbinder</transport>
-        <fqname>@1.0::ICameraDesktop/default</fqname>
-        <fqname>@2.0::ICameraDesktop/default</fqname>
+        <fqname>@1.2::IComponentStore/default</fqname>
     </hal>
+
+    <!-- motorola.hardware.camera.desktop REMOVED. It was declared here while
+         /vendor/bin/hw/motorola.hardware.camera.desktop@2.0-service is labelled
+         vendor_file, so init never started it: exactly the declared-but-absent
+         condition the Dolby codec2 removal is about, sitting in our own manifest.
+         It has been survivable only by accident: hwservicemanager's
+         ServiceManager::getTransport returns Transport::EMPTY when the SELinux
+         `find` check fails, which makes getService() return a prompt nullptr
+         instead of blocking. In other words the avc denial was load-bearing.
+         Adding the hwservice_contexts entry without removing this declaration
+         would have handed the camera provider a HWBINDER transport for an
+         instance nothing serves, and hung it in the infinite retry loop.
+         Stock declares this HAL only in manifest_cliffs.xml, a different SKU. -->
+
     <hal format="hidl">
         <name>vendor.zui.hardware.ifaa</name>
         <transport>hwbinder</transport>

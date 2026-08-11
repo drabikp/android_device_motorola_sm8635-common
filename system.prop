@@ -17,3 +17,48 @@
 # sets here: it points at libnfc_vendor_extn_st.so, which this build does not ship.
 persist.nfc_cfg.config_file_name=libnfc-nci-st.conf
 ro.hw.nfc.vendor=st
+
+# TELEPHONY: the two properties stock sets that this build did not.
+#
+# The radio now powers on (see the RFS work in 24dbc90) and the SIM reads end to
+# end -- subId=1 at slot 0, iccId, imsi=230022701351273, displayName=O2.CZ,
+# mcc=230 mnc=02 -- but it does not REGISTER: no signal, level=0, rsrp unset,
+# carrierName="No service".
+#
+# Both are read by the framework, not by vendor, which is why they belong here
+# rather than in vendor.prop. Values taken verbatim from stock's build.prop, not
+# derived:
+#
+#   ro.telephony.default_network 26,26   THIS IS THE ONE THAT MATTERS. One entry
+#                     per SIM slot. 26 is NETWORK_MODE_NR_LTE_GSM_WCDMA
+#                     (RILConstants.java:232 -- NOT ..._CDMA_EVDO_..., which is 27),
+#                     and it matches stock's own comment: "8+8 mode device on DSDS".
+#                     Unset, RILConstants.java:255-258 falls back to
+#                     NETWORK_MODE_WCDMA_PREF = 0 -- no LTE and no NR at all.
+#
+#   ril.subscription.types       NV,RUIM  Set for stock parity only. NOTHING READS
+#                     IT: a whole-tree grep and a grep over every file in the stock
+#                     dump find it in build.prop and nowhere else -- no binary, no
+#                     qcril library. It is Android-4-era CDMA/RUIM cargo. Do not
+#                     credit it if registration starts working. (Stock is
+#                     self-inconsistent: product/etc/build.prop says RUIM,
+#                     system/build.prop says NV,RUIM; system wins by load order.)
+#
+# NOT SET: ro.telephony.esim_slot_id, which stock DOES set to 1 at
+# product/etc/build.prop:132. Left out because nothing in AOSP or LineageOS reads
+# that name -- it is a Motorola-framework property, and we do not ship that
+# framework. Revisit if eSIM is ever wanted.
+#
+# CAVEAT ON TESTING: SubscriptionManagerService uses PREFERRED_NETWORK_MODE to seed
+# a subscription's allowed network types AT INSERT. subId=1 is already provisioned
+# on this device, so the new value may not reach the existing row without
+# re-provisioning the subscription. Do NOT read "still no signal" as "the property
+# did nothing" -- check the subscription row, or wipe and re-insert it.
+#
+# UNVERIFIED: whether these are sufficient for registration. They are the cheapest
+# remaining difference from stock on this path; if the radio still finds nothing,
+# the next leads are the ~11 persist.vendor.radio.* stock sets that we do not
+# (apm_sim_not_pwdn, sib16_support, custom_ecc, rat_on=combine, ...), and the 27
+# of 72 missing /vendor/etc/qcril_database/upgrade/*.sql (vendor.radio.db_state=3).
+ril.subscription.types=NV,RUIM
+ro.telephony.default_network=26,26

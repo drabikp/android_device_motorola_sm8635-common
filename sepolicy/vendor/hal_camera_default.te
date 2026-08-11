@@ -13,3 +13,131 @@
 # reference is still live, and libbinder aborts. So the crash is a SELinux
 # labelling bug, not a bad blob.
 allow hal_camera_default vendor_hal_arcsoftpp_service:service_manager add;
+
+# ---------------------------------------------------------------------------
+# THE CAMERA-IS-BROKEN FIX IS NOT IN THIS FILE. Read the Dolby block in
+# proprietary-files.txt first.
+#
+# org.lineageos.aperture's "java.lang.IllegalStateException: Camera
+# configuration is null" was NOT a camera problem: two Codec2 IComponentStore
+# instances (default3 and default9) were declared in the VINTF manifest with no
+# server, mediaserver blocked forever in Codec2Client::ListComponents while
+# holding the MediaCodecList mutex, and CameraX hung in MediaCodec.native_setup
+# building each camera's video capabilities. The app never called openCamera at
+# all -- dumpsys media.camera showed "Active Camera Clients: []" the whole time,
+# with both logical devices enumerated and their characteristics readable.
+#
+# Everything below is a SEPARATE and SMALLER matter: three of the four
+# hal_camera_default denials this device logs in ENFORCING at boot, plus the
+# labels they need. The denials are measured, and stock's counterpart rules are
+# cited line by line. What is NOT established is that any of them affects the
+# preview -- the provider never reached a capture session, so there was nothing
+# to measure them against. Treat them as removing known obstacles ahead of the
+# first boot on which the camera can actually be exercised, not as fixes.
+# ---------------------------------------------------------------------------
+
+# PER-UNIT CAMERA CALIBRATION -- the denial the codec hang was hiding.
+#
+#   avc:  denied  { search } for name="vendor" dev="tmpfs"
+#     scontext=u:r:hal_camera_default:s0
+#     tcontext=u:object_r:mnt_vendor_file:s0 tclass=dir permissive=0
+#
+# /mnt/vendor AND /mnt/vendor/persist are both mnt_vendor_file, so this one
+# denied traversal is what keeps the provider out of /mnt/vendor/persist/camera
+# -- which on this handset is not an empty stub:
+#
+#   $ ls -Z /mnt/vendor/persist/camera
+#   dualcal  focus  gyro_compat  iqtuning  ledcal  mot_gyrocal  mot_ledcal
+#
+# i.e. the factory dual-camera alignment, AF, gyro (OIS/EIS), IQ tuning and
+# flash-LED calibration burned in for THIS unit, all currently sitting on the
+# generic mnt_vendor_file label (see file.te / file_contexts).
+#
+# Stock grants exactly this, on the AOSP hal_camera_server attribute that
+# hal_camera_default carries:
+#   vendor_sepolicy.cil:11662  allow hal_camera_server mnt_vendor_file (dir (search))
+#   vendor_sepolicy.cil:11663  allow hal_camera_server mnt_vendor_file (lnk_file (read))
+#   vendor_sepolicy.cil:14010  allow hal_camera_server persist_camera_file dir  rw
+#   vendor_sepolicy.cil:14011  allow hal_camera_server persist_camera_file file rw+create
+#
+# AND QCOM DOES NOT GRANT IT FOR US, which is easy to get wrong: grepping the
+# tree turns up `allow hal_camera_default mnt_vendor_file:dir r_dir_perms` three
+# times, but every hit is under sepolicy_vndr/legacy-um/legacy/ or sm8450/, and
+# BoardConfigCommon.mk builds sm8650 -- sm8650/generic/vendor/common/hal_camera.te
+# and sm8650/generic/vendor/pineapple/hal_camera_default.te never mention
+# /mnt/vendor at all.
+#
+# The write access on persist_camera_file is stock parity, not something
+# observed; the only captured denial is the read-side traversal.
+allow hal_camera_default mnt_vendor_file:dir search;
+allow hal_camera_default mnt_vendor_file:lnk_file read;
+allow hal_camera_default persist_camera_file:dir rw_dir_perms;
+allow hal_camera_default persist_camera_file:file create_file_perms;
+
+# THE IMAGER STORE.
+#
+#   avc:  denied  { read } for name="imager" dev="dm-43"
+#     scontext=u:r:hal_camera_default:s0
+#     tcontext=u:object_r:vendor_data_file:s0 tclass=dir permissive=0
+#
+# dm-43 is userdata; the directory is /data/vendor/misc/imager, it already exists
+# here owned camera:camera, and it has a metadata/ subdirectory. Stock splits it
+# into two types (vendor_file_contexts:727 and :1005) and gives the provider
+# read/write on the parent but create/unlink on metadata/:
+#   vendor_sepolicy.cil:11673-11675  hal_camera_default imager_metadata_file
+#   (allow hal_camera imager_data_file (dir ... add_name remove_name search))
+#   (allow hal_camera imager_data_file (file (ioctl read write getattr lock
+#                                             append map open ...)))
+# -- hal_camera being the AOSP attribute covering the server side, so it lands
+# on hal_camera_default. Mirrored below, with stock's asymmetry preserved: no
+# `create` on imager_data_file:file, `create` on imager_metadata_file:file.
+#
+# Stock's other holders of these types -- tcmd, hal_imagetuner, moto_app,
+# platform_app -- are NOT ported; none of those domains exists in this tree.
+allow hal_camera_default imager_data_file:dir rw_dir_perms;
+allow hal_camera_default imager_data_file:file rw_file_perms;
+allow hal_camera_default imager_metadata_file:dir rw_dir_perms;
+allow hal_camera_default imager_metadata_file:file create_file_perms;
+
+# THE TORCH STATE PROPERTY.
+#
+#   avc: denied { set } for property=vendor.camera.led.torchmode
+#        scontext=u:r:hal_camera_default:s0
+#        tcontext=u:object_r:vendor_default_prop:s0 tclass=property_service
+#
+# See property.te for the type and for why relabelling this ONE property name is
+# not the prefix-relabelling trap that has bitten this tree before, and
+# hal_sensors_default.te for the read grant that has to move with it.
+# set_prop() also carries the file read, which is what stock's
+# vendor_sepolicy.cil:14019-14020 pair does.
+set_prop(hal_camera_default, vendor_camera_ledtorchmode_prop)
+
+# ---------------------------------------------------------------------------
+# THE FOURTH DENIAL IS DELIBERATELY LEFT ALONE.
+#
+#   avc: denied { find } interface=motorola.hardware.camera.desktop::ICameraDesktop
+#        scontext=u:r:hal_camera_default:s0
+#        tcontext=u:object_r:default_android_hwservice:s0
+#
+# Correcting one thing on the record first: we DO ship this HAL. Both
+# /vendor/bin/hw/motorola.hardware.camera.desktop@2.0-service and its rc are in
+# proprietary-files.txt and the binary is on the device (labelled vendor_file, so
+# init will not start it -- the same trap as the FPC and face HALs).
+#
+# It is still not worth wiring up, and the reason is VINTF, not sepolicy. Stock
+# declares motorola.hardware.camera.desktop in manifest_cliffs.xml ONLY -- a
+# different SKU's manifest, not arcfox's -- and this tree declares it nowhere.
+# Labelling the binary and adding the hwservice_contexts entry without a matching
+# VINTF declaration recreates the declared-but-absent hazard this tree has
+# already paid for twice. ICameraDesktop is Motorola's "Ready For" desktop-mode
+# camera path; the provider's lookup for it is a probe that falls through, and
+# the provider registers and enumerates both cameras with the denial present.
+#
+# Stock's pieces, for whoever wants to do it properly later:
+#   vendor_file_contexts:394   /(vendor|system/vendor)/bin/hw/motorola\.hardware\.
+#                              camera\.desktop@[1-9]\.[0-9]-service
+#                                -> hal_cameradesktop_default_exec
+#   vendor_hwservice_contexts:117  motorola.hardware.camera.desktop::ICameraDesktop
+#                                -> hal_cameradesktop_hwservice
+#   plus the hal_cameradesktop / _client / _server attribute set in the CIL.
+# ---------------------------------------------------------------------------

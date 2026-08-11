@@ -146,3 +146,28 @@ set_prop(vendor_init, vendor_mot_hw_prop)
 set_prop(vendor_init, vendor_mot_product_prop)
 set_prop(vendor_init, vendor_mot_init_prop)
 set_prop(vendor_init, vendor_tetras_prop)
+
+# vendor.camera.led.torchmode -- the flash-LED torch state the camera provider
+# publishes. It earns a type by the same test used throughout this file: a
+# vendor domain has to SET it, and vendor_default_prop set is neverallowed to
+# everything except init and vendor_init. Captured in ENFORCING at boot:
+#
+#   avc: denied { set } for property=vendor.camera.led.torchmode
+#        scontext=u:r:hal_camera_default:s0
+#        tcontext=u:object_r:vendor_default_prop:s0 tclass=property_service
+#
+# Stock: vendor_property_contexts:632 names the type; the writers/readers are
+# vendor_sepolicy.cil:14019-14020 (hal_camera_server set + read) and
+# :14108-14109 (hal_sensors_default set + read). Those are the ONLY two, and
+# both are ported here -- hal_camera_default's grant is in
+# hal_camera_default.te, the sensors one in hal_sensors_default.te.
+#
+# THIS IS A SINGLE FULL PROPERTY NAME, NOT A PREFIX, which is the only reason
+# `internal` is safe here. The blanket read that domain.te:508 gives every
+# non-core non-app domain is being taken away from exactly one property, and
+# the only two things in the whole firmware that reference the string are
+# vendor/lib64/hw/camera.qcom.so and vendor/lib64/sensors.qsh.so -- both inside
+# the two domains granted below. No init rc sets it, so vendor_init loses
+# nothing. Stock also classes it vendor_internal_property_type, so a coredomain
+# reader would be a neverallow violation there too.
+vendor_internal_prop(vendor_camera_ledtorchmode_prop)
