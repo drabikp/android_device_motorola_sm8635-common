@@ -1,0 +1,23 @@
+# AOSP's health HAL (android.hardware.health-service.default).
+#
+# It enumerates /sys/class/power_supply and reads each supply's `type` file to
+# classify it as battery / usb / wireless. Eight supplies exist on arcfox; the
+# four Motorola-specific ones are labelled in genfs_contexts here, and the HAL
+# needs read access to those two types or it is denied on every boot:
+#
+#   avc: denied { getattr } for comm="android.hardwar"
+#     path=".../soc:mmi,charger/power_supply/mmi_battery/type"
+#     scontext=u:r:hal_health_default:s0 tcontext=u:object_r:sysfs:s0 tclass=file
+#   avc: denied { open }/{ read } for name="type"
+#     path=".../i2c-1/1-0052/power_supply/charger/type"  (same contexts)
+#
+# Read-only on purpose: this domain only classifies and samples supplies.
+# batt_health is the domain that writes (mmi_battery/update_now), and it keeps
+# its own rw rules in batt_health.te.
+allow hal_health_default vendor_sysfs_battery_supply:dir r_dir_perms;
+allow hal_health_default vendor_sysfs_battery_supply:file r_file_perms;
+allow hal_health_default vendor_sysfs_battery_supply:lnk_file r_file_perms;
+
+allow hal_health_default vendor_sysfs_usb_supply:dir r_dir_perms;
+allow hal_health_default vendor_sysfs_usb_supply:file r_file_perms;
+allow hal_health_default vendor_sysfs_usb_supply:lnk_file r_file_perms;

@@ -11,3 +11,30 @@
 # is longer and still wins.
 genfscon proc /hw     u:object_r:proc_hwconf:s0
 genfscon proc /config u:object_r:proc_hwconf:s0
+
+# Motorola's power-supply nodes. Four of the eight entries under
+# /sys/class/power_supply were falling through to generic u:object_r:sysfs:s0
+# (checked with `ls -ldZ` on the resolved /sys/devices paths); the other four
+# already come from QCOM's sepolicy_vndr. The consequence was a live denial --
+# AOSP's health HAL reads each supply's `type` file while enumerating
+# /sys/class/power_supply, and was denied getattr/open/read on two of them:
+#   denied { read } for comm="android.hardwar" name="type"
+#     scontext=u:r:hal_health_default:s0 tcontext=u:object_r:sysfs:s0
+#
+# The first two are taken verbatim from stock's vendor_sepolicy.cil (lines 176
+# and 36). The last two have no stock entry -- stock's kernel exposes the i2c
+# bus at /devices/platform/soc/a84000.i2c/... while ours nests it under the
+# qupv3 wrapper, so stock's paths do not match here -- but they are real
+# supplies on this unit (the charger IC and the razr's second cell), so they
+# get the same types their function implies.
+#
+# batt_health already holds rw on vendor_sysfs_battery_supply (batt_health.te),
+# so relabelling mmi_battery does not disturb its update_now write. This
+# supersedes the note in batt_health.te about avoiding stock's genfscon: the
+# reason given there was that healthd walks these nodes, and the correct answer
+# is to label them per stock AND grant the health HAL the read it needs
+# (hal_health_default.te), not to leave them generic.
+genfscon sysfs /devices/platform/soc/soc:mmi,charger/power_supply/mmi_battery u:object_r:vendor_sysfs_battery_supply:s0
+genfscon sysfs /devices/platform/soc/soc:qcom,pmic_glink/soc:qcom,pmic_glink:mmi,qti-glink-charger/power_supply/main_battery u:object_r:vendor_sysfs_battery_supply:s0
+genfscon sysfs /devices/platform/soc/ac0000.qcom,qupv3_0_geni_se/a84000.i2c/i2c-1/1-0064/power_supply/flip_battery u:object_r:vendor_sysfs_battery_supply:s0
+genfscon sysfs /devices/platform/soc/ac0000.qcom,qupv3_0_geni_se/a84000.i2c/i2c-1/1-0052/power_supply/charger u:object_r:vendor_sysfs_usb_supply:s0

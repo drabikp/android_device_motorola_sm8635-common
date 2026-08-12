@@ -37,12 +37,15 @@ allow batt_health self:netlink_kobject_uevent_socket { create bind read write ge
 # (/sys/devices/platform/soc/soc:muc_uart does not exist here either).
 #
 # The WRITE on sysfs:file is for /sys/class/power_supply/mmi_battery/update_now.
-# On stock that node is vendor_sysfs_battery_supply via
-# `genfscon sysfs /devices/platform/soc/soc:mmi,charger/power_supply/mmi_battery`;
-# on this device it resolves to exactly that path and is u:object_r:sysfs:s0
-# (checked with ls -Z). Adding stock's genfscon would relabel a node that
-# healthd walks during its power_supply enumeration, so the narrower change is
-# to let this one domain write plain sysfs instead.
+#
+# UPDATE: stock's genfscon for that node IS now applied (genfs_contexts), so it
+# is u:object_r:vendor_sysfs_battery_supply:s0 and the write is covered by the
+# rule further down. The worry recorded here previously -- that relabelling it
+# would disturb the node healthd walks -- was the wrong call: leaving it generic
+# is exactly what produced a live hal_health_default denial on its `type` file.
+# The right answer was stock's label plus an explicit read for the health HAL
+# (see hal_health_default.te). The plain-sysfs rules below are kept because
+# batt_health also touches other nodes that genuinely have no stock label.
 allow batt_health sysfs:dir r_dir_perms;
 allow batt_health sysfs:file rw_file_perms;
 allow batt_health sysfs:lnk_file r_file_perms;

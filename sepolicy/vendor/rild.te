@@ -33,3 +33,18 @@ allow rild vendor_thermal-engine:unix_stream_socket connectto;
 # vendor_modem_efs_partition_device; the vendor_modem_block_device half is
 # Motorola's, and stock has it. Without this the FSG work upstream of it is moot.
 allow vendor_rmt_storage vendor_modem_block_device:blk_file rw_file_perms;
+
+# rild writes vendor.ril.* properties. property_contexts here now labels that
+# whole prefix vendor_radio_prop, per stock (vendor_property_contexts:580), but
+# the label alone is not enough -- QCOM's own rild.te
+# (device/qcom/sepolicy_vndr/legacy-um/legacy/vendor/common/rild.te:86) grants
+# only set_prop(rild, vendor_xlat_prop), never vendor_radio_prop. Without this
+# the set is still denied, just against a different type:
+#
+#   avc: denied { set } for property=vendor.ril.radio.ctbk_val uid=1001 gid=1001
+#        scontext=u:r:rild:s0 tclass=property_service
+#
+# vendor_radio_prop is QCOM's own radio-property type (it already carries the
+# persist.vendor.radio and vendor.radio prefixes), so granting the radio daemon
+# `set` on it is the narrow, in-domain answer.
+set_prop(rild, vendor_radio_prop)

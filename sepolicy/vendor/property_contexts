@@ -62,3 +62,19 @@ vendor.faceauth.                u:object_r:vendor_tetras_prop:s0
 # while the torch is lit). Stock: vendor_property_contexts:632. See property.te
 # for why relabelling ONE property is safe where relabelling a prefix is not.
 vendor.camera.led.torchmode     u:object_r:vendor_camera_ledtorchmode_prop:s0
+
+# The whole vendor.ril.* namespace. Stock has this one line
+# (vendor_property_contexts:580) and we had NOTHING -- QCOM's sepolicy_vndr
+# ships `persist.vendor.radio` and `vendor.radio` prefixes but no `vendor.ril.`,
+# so every vendor.ril.* property was landing on vendor_default_prop, which a
+# vendor domain is neverallowed to write. Measured live:
+#
+#   avc: denied { set } for property=vendor.ril.radio.ctbk_val uid=1001 gid=1001
+#        scontext=u:r:rild:s0 tcontext=u:object_r:vendor_default_prop:s0
+#        tclass=property_service
+#
+# Two such properties exist on this unit (vendor.ril.radio.ctbk_val and
+# vendor.ril.radio.sar_sensor_distance -- the SAR/antenna-tuning pair), plus
+# vendor.ril.gsm.version.baseband / vendor.ril.svdo / vendor.ril.svlte1x named
+# in qcrilNrd and libqcrilNr.so.
+vendor.ril.                     u:object_r:vendor_radio_prop:s0
