@@ -653,6 +653,16 @@ vendor/lib64/libconfigdb.so
 vendor/lib64/liblog_vendor.so
 vendor/lib64/liblqe.so
 vendor/lib64/libmdmcutback.so;DISABLE_CHECKELF
+# The config libmdmcutback.so actually reads, and the only file under
+# vendor/etc/motorola/ with a LIVE consumer: the running qcrilNrd has
+# libmdmcutback.so mapped, and that library is the sole reference to
+# "mdmctbk"/"ctbk_cfg" anywhere in the stock vendor partition. It is the
+# WiFi/WWAN coexistence TX-power limit table (<ctbk_version>33</ctbk_version>,
+# per-antenna-state SAR limits) behind the vendor.ril.radio.ctbk_val property
+# that rild publishes -- see sepolicy/vendor/rild.te. Without it rild was
+# publishing a value derived from a config that did not exist. Nothing logs a
+# complaint when it is missing; the library just falls back silently.
+vendor/etc/motorola/mdmctbk/ctbk_cfg.xml
 vendor/lib64/libmdmdetect.so
 vendor/lib64/libminkdescriptor.so
 vendor/lib64/libmotext_inf.so
@@ -1615,6 +1625,26 @@ vendor/bin/mot_attest_check
 vendor/bin/mot_flip_count
 vendor/bin/mot_rkp_csr_extraction.sh
 vendor/bin/mot_tcmd
+# mot_tcmd's and libpkip.so's data files. The whole vendor/etc/motorola/ tree
+# (11 files, 92K) was absent from this list, so three shipped consumers had no
+# data to read. Both of these dirs are factory-path only -- mot_tcmd reads
+# tcmd/cid_template* and 12m/tcmd_leds.cfg, libpkip.so reads tcmd/ifaa.pubkey --
+# so nothing here changes normal boot. They are shipped anyway because a shipped
+# binary with its data missing is the single most repeated bug in this port, and
+# the failure mode is silent. (12m/fac_test_config.xml has no consumer anywhere
+# in the stock vendor partition; it comes along for tree parity.)
+# The one file in that tree that DOES matter at runtime, mdmctbk/ctbk_cfg.xml,
+# is listed next to libmdmcutback.so above.
+vendor/etc/motorola/tcmd/cid_template.dat
+vendor/etc/motorola/tcmd/cid_template.locked
+vendor/etc/motorola/tcmd/cid_template.unlocked
+vendor/etc/motorola/tcmd/ifaa.key.enc
+vendor/etc/motorola/tcmd/ifaa.pubkey
+vendor/etc/motorola/12m/batch/WirelessChg.bat
+vendor/etc/motorola/12m/fac_test_config.xml
+vendor/etc/motorola/12m/key_code_map.txt
+vendor/etc/motorola/12m/tcmd_leds.cfg
+vendor/etc/motorola/12m/2kHz_Mono_1s.wav
 vendor/bin/myftm
 vendor/bin/nicmd
 vendor/bin/nqnfcinfo
