@@ -38,17 +38,40 @@ PRODUCT_USE_DYNAMIC_PARTITIONS := true
 # list the packager has no META/ab_partitions.txt and fails with
 #   AssertionError: META/ab_partitions.txt is required for ab_update.
 #
-# Deliberately EXCLUDES vendor_boot, vendor_dlkm, system_dlkm and dtbo: this ROM
-# does not build them (prebuilt GKI kernel, stock kernel modules), so the stock
-# copies must be left untouched on the handset.
+# vendor_dlkm and system_dlkm MUST be here. They are inside super, which we do
+# flash, and delta_generator validates that every partition named in
+# motorola_dynamic_partitions_partition_list (BoardConfigCommon.mk:258-264) has a
+# payload entry. Omitting them broke `mka otapackage` outright:
+#
+#   ERROR:payload_generation_config.cc(262)] Cannot find partition vendor_dlkm
+#     which is in motorola_dynamic_partitions_partition_list
+#   FATAL: Check failed: payload_config.target.ValidateDynamicPartitionMetadata()
+#
+# ⚠️ The comment that used to sit here claimed this ROM "does not build"
+# vendor_boot, vendor_dlkm, system_dlkm or dtbo. That is FALSE for all four --
+# the build produces every one of them. What is true is narrower and is the
+# actual reason for the exclusions below:
+#
+#   * vendor_dlkm/system_dlkm ARE built by us. The 287 + 60 modules are stock
+#     (our prebuilt/ copies are byte-identical to the W1UXS36H dump), but the
+#     build strips them -- ours ship out of
+#     obj/PACKAGING/depmod_vendor_stripped_intermediates -- so the images we
+#     pack into super are OURS, not stock's, and an OTA that skipped them would
+#     leave the handset inconsistent with the super we flash.
+#   * vendor_boot and dtbo are built too, but install-lineage-fastboot.sh
+#     deliberately does NOT flash them (it flashes only boot, init_boot, super,
+#     vbmeta, vbmeta_system). The stock copies are meant to stay on the handset,
+#     so shipping ours via OTA would silently change behaviour. Keep them out.
 AB_OTA_PARTITIONS += \
     boot \
     init_boot \
     product \
     system \
     system_ext \
+    system_dlkm \
     vbmeta \
-    vendor
+    vendor \
+    vendor_dlkm
 
 # Prebuilt kernel modules. 287 in vendor_dlkm, 60 in system_dlkm, extracted
 # from the shipping firmware. These arrive via the blob manifest rather than
