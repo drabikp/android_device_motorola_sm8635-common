@@ -171,6 +171,41 @@ persist.vendor.bt.a2dp_offload_cap=sbc-aptx-aptxtws-aptxhd-aac-ldac
 
 persist.vendor.camera.physical.num=8
 
+# Stock sets these three in system/build.prop (lines 98, 117, 118) -- a partition
+# LineageOS rebuilds from scratch, so they were simply lost, and nothing in this
+# device tree ever put them back. All three were unset on the running image.
+#
+# persist.vendor.data.mode is the one that matters. /vendor/bin/init.class_main.sh
+# reads it into $datamode and switches on it:
+#     case "$datamode" in
+#         "tethered")   start vendor.dataqti; [ low_ram != true ] && start vendor.dataadpl ;;
+#         "concurrent") start vendor.dataqti; [ low_ram != true ] && start vendor.dataadpl ;;
+#         *)            ;;      <-- unset landed here: NEITHER service ever started
+#     esac
+# Both are `disabled` in their rc files, so that switch is the only thing that
+# starts them. Both binaries ship and both work -- verified live before
+# committing: vendor.dataqti (/vendor/bin/qti) and vendor.dataadpl
+# (/vendor/bin/adpl, note the service and binary names differ) each came up and
+# held the same pid for 40s with zero crashes. ro.config.low_ram is unset here,
+# so the dataadpl arm is taken too.
+persist.vendor.data.mode=concurrent
+
+# Read by /vendor/bin/cnd, libcne.so and libwqe.so. Set to stock's value for
+# parity; measured no behaviour change on its own (the vendor_cnd retry loop for
+# vendor.qti.data.nwmgr.INwMgr ran at an identical rate with it set and unset).
+persist.vendor.cne.feature=1
+
+# Stock parity only -- INERT on this device. Nothing under /vendor reads it, and
+# netmgrd does not exist in the stock dump at all, so it cannot behave any
+# differently here than it does on stock.
+ro.vendor.use_data_netmgrd=true
+
+# NOT fixed by any of the above, and NOT fixable by shipping a blob: vendor_cnd
+# retries `vendor.qti.data.nwmgr.INwMgr` as a lazy service ~5x/second forever.
+# Nothing in the entire stock firmware SERVES that interface -- only libcne.so
+# and vendor.libdpmframework.so reference it, plus the vndservice_contexts label.
+# Same shape as vendor.dpmd below: stock churns identically.
+
 persist.vendor.dpm.feature=1
 # Stock sets this to 11 (vendor/build.prop:432), which trips the
 # `on property:persist.vendor.dpm.vndr.feature=*` rule in vendor.dpmd.rc and
