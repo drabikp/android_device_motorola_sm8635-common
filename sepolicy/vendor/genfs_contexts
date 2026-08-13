@@ -34,7 +34,29 @@ genfscon proc /config u:object_r:proc_hwconf:s0
 # reason given there was that healthd walks these nodes, and the correct answer
 # is to label them per stock AND grant the health HAL the read it needs
 # (hal_health_default.te), not to leave them generic.
+# ⚠️ EXACTLY stock's two Motorola supplies and nothing more. The first version of
+# this change also labelled `flip_battery` and the i2c `charger` "by function",
+# which stock does NOT label -- and that over-reach broke suspend. genfscon
+# matches by LONGEST PATH PREFIX, so a `wakeup*` directory nested under a supply
+# inherits that supply's type unless it has its own entry. Inventing supply
+# labels therefore silently drags their wakeup children out of sysfs_wakeup --
+# which system_suspend is allowed to read -- into a type it is not. Measured on
+# the first cold boot after that mistake, 40 denials in one boot:
+#
+#   avc: denied { read } for comm="binder:1346_8" name="active_count"
+#     scontext=u:r:system_suspend:s0
+#     tcontext=u:object_r:vendor_sysfs_usb_supply:s0 tclass=file
+#   ...same for name, last_change_ms, max_time_ms.
+#
+# QCOM's sepolicy_vndr already ships the sysfs_wakeup entries for battery, usb,
+# wireless and ucsi1 (adding them here is a hard build error, "duplicate entry
+# for genfs entry"). The ONLY wakeup child stock has to add is mmi_battery's,
+# and it is `wakeup30` -- the kernel numbers these, so do NOT "tidy" it.
+#
+# Residual and accepted: hal_health_default still gets a benign denial reading
+# `type` on the unlabelled i2c charger/flip_battery supplies. Battery reporting
+# is unaffected -- it comes from the properly labelled `battery` node -- and
+# stock does not label them either. Parity beats a fix that breaks suspend.
 genfscon sysfs /devices/platform/soc/soc:mmi,charger/power_supply/mmi_battery u:object_r:vendor_sysfs_battery_supply:s0
+genfscon sysfs /devices/platform/soc/soc:mmi,charger/power_supply/mmi_battery/wakeup30 u:object_r:sysfs_wakeup:s0
 genfscon sysfs /devices/platform/soc/soc:qcom,pmic_glink/soc:qcom,pmic_glink:mmi,qti-glink-charger/power_supply/main_battery u:object_r:vendor_sysfs_battery_supply:s0
-genfscon sysfs /devices/platform/soc/ac0000.qcom,qupv3_0_geni_se/a84000.i2c/i2c-1/1-0064/power_supply/flip_battery u:object_r:vendor_sysfs_battery_supply:s0
-genfscon sysfs /devices/platform/soc/ac0000.qcom,qupv3_0_geni_se/a84000.i2c/i2c-1/1-0052/power_supply/charger u:object_r:vendor_sysfs_usb_supply:s0
