@@ -407,6 +407,47 @@ PRODUCT_PACKAGES += \
 PRODUCT_PACKAGES += \
     android.hardware.bluetooth.audio-impl
 
+# The CLASSIC Bluetooth profiles. Without these the stack has no A2DP/HFP/AVRCP
+# at all, so a speaker or headset PAIRS and then cannot connect -- Settings just
+# logs, once, and never even attempts:
+#
+#   D CachedBluetoothDevice: No profiles. Maybe we will connect later for device ...
+#
+# Stock sets all 14 in /product/etc/build.prop (lines 104-118). LineageOS
+# rebuilds the product partition from scratch, so they were lost -- exactly the
+# same shape as the data-plane props in eb182d2. What we DID keep are the eight
+# LE-audio ones (bap/ccp/csip/hap/mcp/vcp), because those come from vendor.prop
+# and so ride along on /vendor/build.prop. Nothing in LineageOS supplies these
+# for a real device; only goldfish, cuttlefish and Car set them, so it is the
+# device tree's job.
+#
+# Verified live before committing: with the properties set by hand and
+# com.android.bluetooth force-stopped so it re-read them, the same tap that had
+# produced "No profiles" instead produced a real connection attempt --
+#   I BluetoothAdapterService: connectEnabledProfile: Connecting A2dpService
+#   I A2dpService: okToConnect: device ... isOutgoingRequest: true
+#   D CachedBluetoothDevice: onProfileStateChanged: profile A2DP, newProfileState 1
+# It then went back to state 0 after ~10s, which is the timeout signature of the
+# speaker being powered off/out of range rather than a stack fault; that half
+# still needs confirming with the speaker switched on.
+#
+# Taken verbatim from stock, including hid.device being the one set to false.
+PRODUCT_PRODUCT_PROPERTIES += \
+    bluetooth.profile.a2dp.source.enabled=true \
+    bluetooth.profile.avrcp.target.enabled=true \
+    bluetooth.profile.avrcp.controller.enabled=true \
+    bluetooth.profile.hfp.ag.enabled=true \
+    bluetooth.profile.gatt.enabled=true \
+    bluetooth.profile.hid.host.enabled=true \
+    bluetooth.profile.hid.device.enabled=false \
+    bluetooth.profile.map.server.enabled=true \
+    bluetooth.profile.opp.enabled=true \
+    bluetooth.profile.pan.nap.enabled=true \
+    bluetooth.profile.pan.panu.enabled=true \
+    bluetooth.profile.pbap.server.enabled=true \
+    bluetooth.profile.bas.client.enabled=true \
+    bluetooth.profile.asha.central.enabled=true
+
 $(call inherit-product-if-exists, vendor/motorola/sm8635-common/sm8635-common-vendor.mk)
 
 # FACE UNLOCK. Everything needed was already on the device except the exec label:
