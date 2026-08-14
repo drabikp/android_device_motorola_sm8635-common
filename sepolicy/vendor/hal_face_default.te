@@ -78,3 +78,31 @@ set_prop(hal_face_default, vendor_tetras_prop)
 #   android.hardware.biometrics.face@1.0-service.face. We ship that binary (it
 #   comes with the same blob set) but nothing should be running it: the AIDL HAL
 #   above is what serves IFace/default. Leaving it unlabelled keeps it unstartable.
+
+# GRALLOC. The HAL allocates and maps graphic buffers to receive camera frames.
+# Without this it aborts outright the moment enrolment starts capturing:
+#
+#   Abort message: 'gralloc-mapper is missing'
+#   F libc: Fatal signal 6 (SIGABRT) ... android.hardware.biometrics.face-service.face-isv
+#
+# preceded by, in the same 2ms:
+#   avc: denied { find } for android.hardware.graphics.allocator.IAllocator/default
+#     scontext=u:r:hal_face_default:s0
+#     tcontext=u:object_r:hal_graphics_allocator_service:s0 tclass=service_manager
+#   avc: denied { find } for interface=android.hardware.graphics.mapper::IMapper
+#     scontext=u:r:hal_face_default:s0
+#     tcontext=u:object_r:hal_graphics_mapper_hwservice:s0 tclass=hwservice_manager
+#
+# Both are needed and hal_client_domain() grants both halves: this device serves
+# the AIDL allocator (android.hardware.graphics.allocator.IAllocator/default) via
+# servicemanager AND the HIDL mapper (@4.0-impl-qti-display, a passthrough loaded
+# in-process) via hwservicemanager, so granting only one leaves the abort in place.
+#
+# Precedent in AOSP for exactly this pairing: adbd.te, fwk_bufferhub.te,
+# mediadrmserver.te and automotive_display_service.te all use this same macro for
+# the same reason -- any domain that touches gralloc buffers needs it.
+#
+# Context: this was found only after fixing the camera ABI mismatch that was
+# crashing the HAL earlier in the capture path. With this granted the HAL gets as
+# far as `startCapture out And camera_status: 0`.
+hal_client_domain(hal_face_default, hal_graphics_allocator)
