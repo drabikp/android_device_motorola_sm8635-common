@@ -129,6 +129,23 @@ PRODUCT_PACKAGES += \
     vendor.qti.qspa-service \
     qspa_vendor.rc
 
+# QTI telephony shared libraries. WITHOUT THESE, INBOUND SMS IS SILENTLY DROPPED.
+# qcrilmsgtunnel.apk (which we already ship) declares
+#   uses-library: 'qti-telephony-hidl-wrapper'
+# and an unresolvable uses-library makes PackageManager REFUSE to install the app:
+# the apk sits in /system_ext/priv-app but never appears in `pm list packages`.
+# No qcrilmsgtunnel means no QcrilMsgTunnelService, which is what QcRilHook binds
+# to, so nothing on the AP can send an OEM hook to the RIL. One of those hooks is
+# QCRIL_EVT_HOOK_SET_ATEL_UI_STATUS, and until it arrives qcrilNrd's ATEL UI status
+# stays 0 -- which is the gate that parks every mobile-terminated SMS in the
+# power-opt buffer and discards it 20s later, unacknowledged. See the commit message.
+# The .xml modules are the <library> declarations; the jar alone is not enough.
+PRODUCT_PACKAGES += \
+    qti-telephony-hidl-wrapper \
+    qti_telephony_hidl_wrapper.xml \
+    qti-telephony-utils \
+    qti_telephony_utils.xml
+
 # Vendor service manager.
 PRODUCT_PACKAGES += \
     vndservice \
