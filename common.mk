@@ -129,6 +129,13 @@ PRODUCT_PACKAGES += \
     vendor.qti.qspa-service \
     qspa_vendor.rc
 
+# QSPA modem selector. Sets ro.boot.vendor.qspa.modem=enabled, without which four
+# QTI telephony apks (org.codeaurora.ims, com.qti.phone, qcrilmsgtunnel,
+# uimGbaApp) are skipped at parse time and never install. See the .rc for why it
+# has to be an init script in system_ext rather than a property or the cmdline.
+PRODUCT_PACKAGES += \
+    init.arcfox-qspa.rc
+
 # QTI telephony shared libraries. WITHOUT THESE, INBOUND SMS IS SILENTLY DROPPED.
 # qcrilmsgtunnel.apk (which we already ship) declares
 #   uses-library: 'qti-telephony-hidl-wrapper'

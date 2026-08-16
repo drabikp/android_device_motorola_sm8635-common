@@ -131,3 +131,15 @@ prebuilt_etc {
     sub_dir: "permissions",
     vendor: true,
 }
+
+// QSPA modem selector. Installed to /system_ext/etc/init, NOT /vendor/etc/init:
+// it sets a ro.boot.* property, which is labelled bootloader_prop, and
+// vendor_init has no permission to write that context. See the file itself for
+// why neither a .prop nor BOARD_BOOTCONFIG/BOARD_KERNEL_CMDLINE can do this on
+// this device.
+prebuilt_etc {
+    name: "init.arcfox-qspa.rc",
+    src: "init/init.arcfox-qspa.rc",
+    sub_dir: "init",
+    system_ext_specific: true,
+}

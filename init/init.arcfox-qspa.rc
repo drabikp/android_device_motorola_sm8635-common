@@ -1,0 +1,42 @@
+# QSPA modem selector -- without this, four QTI telephony apks never install.
+#
+# org.codeaurora.ims, com.qti.phone, com.qualcomm.qcrilmsgtunnel and
+# com.qualcomm.qti.uimGbaApp are "QSPA" single-apk packages: each declares an
+# <overlay> gated on a boot property,
+#
+#   requiredPropertyName='ro.boot.vendor.qspa.modem' requiredPropertyValue='enabled'
+#
+# and ApkLiteParseUtils drops any apk whose required system property does not
+# match (frameworks/base/core/java/android/content/pm/parsing/
+# ApkLiteParseUtils.java:803-810):
+#
+#   Failed to parse /system_ext/priv-app/qcrilmsgtunnel:
+#     Skipping target and overlay pair com.qualcomm.qcrilmsgtunnel and <path>
+#
+# So the apks sat in /system_ext/priv-app and /product/app and never appeared in
+# `pm list packages` at all -- for the entire life of this port. Setting this
+# property and restarting the framework installed all four, and org.codeaurora.ims
+# (the IMS app, i.e. VoLTE) and com.qti.phone ran for the first time.
+#
+# WHY AN RC FILE AND NOT A .prop OR THE CMDLINE:
+#   * ro.boot.* is created ONLY from androidboot.* in the kernel cmdline or
+#     bootconfig (property_service.cpp:1360-1375). A build.prop entry cannot make
+#     one. Proof already in this tree: vendor.prop sets ro.boot.mmi.bootlog=true,
+#     it reaches /vendor/build.prop:273, and the runtime property is EMPTY.
+#   * BOARD_BOOTCONFIG and BOARD_KERNEL_CMDLINE both land in vendor_boot on this
+#     header-v4 device, and install-lineage-fastboot.sh flashes only boot,
+#     init_boot, super, vbmeta and vbmeta_system -- vendor_boot stays stock. Our
+#     boot.img was checked with unpack_bootimg: "command line args:" is empty.
+#     So both build-side vehicles are inert here.
+#   * ro.boot.* is labelled u:object_r:bootloader_prop:s0 and vendor_init has no
+#     permission to set it (zero matches in vendor_sepolicy.cil), so this file
+#     MUST be installed to /system_ext/etc/init and run in the init context, not
+#     /vendor/etc/init.
+#
+# If the bootloader ever supplies androidboot.vendor.qspa.modem itself, that value
+# is set during PropertyInit() long before this runs and wins outright, because
+# ro.* properties are write-once. This only fills in a value the bootloader on
+# this unit does not provide.
+
+on early-init
+    setprop ro.boot.vendor.qspa.modem enabled
