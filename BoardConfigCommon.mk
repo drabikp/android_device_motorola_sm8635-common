@@ -331,6 +331,14 @@ BOARD_VENDOR_KERNEL_MODULES := $(wildcard $(COMMON_PATH)/prebuilt/vendor_dlkm_mo
 BOARD_VENDOR_KERNEL_MODULES_LOAD := $(shell cat $(COMMON_PATH)/prebuilt/vendor_dlkm_modules/modules.load 2>/dev/null)
 BOARD_VENDOR_KERNEL_MODULES_BLOCKLIST_FILE := $(COMMON_PATH)/prebuilt/vendor_dlkm_modules/modules.blocklist
 BOARD_SYSTEM_KERNEL_MODULES := $(wildcard $(COMMON_PATH)/prebuilt/system_dlkm_modules/*.ko)
+# Without the _LOAD list the build writes an EMPTY system_dlkm modules.load, so
+# all 60 modules ship and NONE of them load. That cost mobile data: tipc.ko is
+# entry 45, TIPC is the transport the NICM client uses, and with the address
+# family absent every socket(AF_TIPC) returns EAFNOSUPPORT, dsi_init never
+# completes, and qcrilNrd rejects every SETUP_DATA_CALL locally in 4ms with
+# "DSI init not yet completed" -> OEM_DCFAILCAUSE_4. See the commit message.
+# The list is stock's own, in stock's order (dependencies matter).
+BOARD_SYSTEM_KERNEL_MODULES_LOAD := $(shell cat $(COMMON_PATH)/prebuilt/system_dlkm_modules/modules.load 2>/dev/null)
 
 # --- Verified boot ----------------------------------------------------------
 # Rollback index read from this build's vbmeta.img with avbtool:
