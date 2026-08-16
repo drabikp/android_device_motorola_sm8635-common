@@ -728,6 +728,8 @@ vendor/lib64/vendor.qti.hardware.radio.uim_remote_client@1.2.so
 vendor/lib64/vendor.qti.hardware.radio.uim_remote_server@1.0.so
 system/etc/permissions/moto-telephony.xml:system_ext/etc/permissions/moto-telephony.xml
 system/framework/moto-telephony.jar:system_ext/framework/moto-telephony.jar
+system/etc/permissions/moto-ims-ext.xml:system_ext/etc/permissions/moto-ims-ext.xml
+system/framework/moto-ims-ext.jar:system_ext/framework/moto-ims-ext.jar
 system_ext/priv-app/ims/ims.apk
 system_ext/app/ImsRcsService/ImsRcsService.apk
 system_ext/etc/permissions/vendor.qti.ims.rcsservice.xml

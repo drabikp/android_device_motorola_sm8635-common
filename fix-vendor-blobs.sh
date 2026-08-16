@@ -96,7 +96,49 @@ fix_wlan_ini() {
     return 0
 }
 
+# --- fixup 3: moto-telephony.xml points at the wrong partition ---------------
+# proprietary-files.txt relocates both halves from system/ to system_ext/:
+#   system/etc/permissions/moto-telephony.xml : system_ext/etc/permissions/...
+#   system/framework/moto-telephony.jar       : system_ext/framework/...
+# but the XML's own file= attribute still names the ORIGINAL path, so the
+# declaration dangles and the library is silently dropped at boot:
+#
+#   I SystemConfig: Ignore shared library moto-telephony:
+#     /system/framework/moto-telephony.jar does not exist
+#
+# org.codeaurora.ims declares `uses-library moto-telephony`, so with the library
+# ignored PackageManager reports
+#   E PackageManager: updateAllSharedLibrariesLPw failed: Package
+#     org.codeaurora.ims requires unavailable shared library ...
+# and the app runs unlinked. Rewrite the attribute to match where we install it.
+fix_moto_telephony_xml() {
+    local dir="$TOP/vendor/motorola/sm8635-common/proprietary/system_ext/etc/permissions"
+    local missing=0 n=0 name f
+    for name in moto-telephony moto-ims-ext; do
+        f="$dir/$name.xml"
+        if [ ! -f "$f" ]; then
+            echo "  $name.xml: not extracted (ok, blob not shipped)"
+            continue
+        fi
+        if ! /usr/bin/grep -q "\"/system/framework/$name.jar\"" "$f"; then
+            echo "  $name.xml: already points at system_ext (ok)"
+            continue
+        fi
+        if [ "$CHECK" = "1" ]; then
+            echo "  $name.xml: still points at /system/framework -- FIXUP MISSING"
+            missing=1
+            continue
+        fi
+        /usr/bin/sed -i "s|\"/system/framework/$name\.jar\"|\"/system_ext/framework/$name.jar\"|" "$f"
+        echo "  $name.xml: repointed to /system_ext/framework"
+        n=$((n+1))
+    done
+    [ "$missing" = "1" ] && return 1
+    return 0
+}
+
 echo "fix-vendor-blobs:"
 fix_allocator || rc=1
 fix_wlan_ini  || rc=1
+fix_moto_telephony_xml || rc=1
 exit $rc
