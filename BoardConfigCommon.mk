@@ -330,15 +330,53 @@ TARGET_COPY_OUT_SYSTEM_DLKM := system_dlkm
 BOARD_VENDOR_KERNEL_MODULES := $(wildcard $(COMMON_PATH)/prebuilt/vendor_dlkm_modules/*.ko)
 BOARD_VENDOR_KERNEL_MODULES_LOAD := $(shell cat $(COMMON_PATH)/prebuilt/vendor_dlkm_modules/modules.load 2>/dev/null)
 BOARD_VENDOR_KERNEL_MODULES_BLOCKLIST_FILE := $(COMMON_PATH)/prebuilt/vendor_dlkm_modules/modules.blocklist
-BOARD_SYSTEM_KERNEL_MODULES := $(wildcard $(COMMON_PATH)/prebuilt/system_dlkm_modules/*.ko)
-# Without the _LOAD list the build writes an EMPTY system_dlkm modules.load, so
-# all 60 modules ship and NONE of them load. That cost mobile data: tipc.ko is
-# entry 45, TIPC is the transport the NICM client uses, and with the address
-# family absent every socket(AF_TIPC) returns EAFNOSUPPORT, dsi_init never
-# completes, and qcrilNrd rejects every SETUP_DATA_CALL locally in 4ms with
-# "DSI init not yet completed" -> OEM_DCFAILCAUSE_4. See the commit message.
-# The list is stock's own, in stock's order (dependencies matter).
-BOARD_SYSTEM_KERNEL_MODULES_LOAD := $(shell cat $(COMMON_PATH)/prebuilt/system_dlkm_modules/modules.load 2>/dev/null)
+# system_dlkm modules MUST be installed into a VERSIONED subdirectory.
+#
+# The loader is stock's own /vendor/bin/system_dlkm_modprobe.sh, run by the
+# gki.modprobe service (init.qti.kernel.rc:38, `exec_start`, gated on
+# ro.vendor.qti.load_dlkm.service="" -- which is our case). Its very first test
+# is a glob over a version subdirectory:
+#
+#   SYSTEM_DLKM_DIR="/system_dlkm/lib/modules"
+#   if [ ! -e ${dir}/*/modules.load ]; then continue; fi     <-- flat layout MISSES
+#   ${MODPROBE} -b -s -d ${dir}/*/ -a ${first_module}
+#
+# AOSP installs BOARD_SYSTEM_KERNEL_MODULES FLAT (BOARD_KERNEL_MODULE_DIRS
+# defaults to just `top`, build/make/core/Makefile:703), so the glob never
+# matched, the loop hit `continue`, the script `exit 1`ed, and NONE of the 60
+# modules loaded -- silently, with no error anywhere. Populating modules.load
+# was necessary but NOT sufficient: verified on a flashed image where the file
+# had all 60 entries and `lsmod` still showed only the 387 vendor_dlkm ones.
+# That is what kept costing mobile data (tipc.ko -> AF_TIPC -> dsi_init ->
+# SETUP_DATA_CALL); it was masked for weeks by hand-running insmod after boot.
+#
+# Naming the directory after the modules' own vermagic reproduces stock exactly
+# (stock ships /system_dlkm/lib/modules/6.1.145-android14-11-geaa643a2c0ee-...).
+# The script only globs `*`, so any single subdirectory would satisfy it, but
+# matching stock keeps modprobe's own version handling honest.
+# NOTE this is deliberately NOT `uname -r`: our Image is 6.1.128 while these
+# modules are 6.1.145. Same KMI generation (android14-11), and they load fine.
+#
+# The version lives in a text file beside the modules, NOT sniffed from a .ko
+# here: soong runs $(shell) with a RESTRICTED PATH, so `strings` is unavailable
+# and the extraction silently returned empty (the $(error) below caught it).
+# `cat` is available -- it is how modules.load is already read. Regenerate the
+# file whenever these blobs are re-extracted:
+#   strings -a prebuilt/system_dlkm_modules/tipc.ko \
+#     | sed -n 's/^vermagic=\([^ ]*\).*/\1/p' | head -1 \
+#     > prebuilt/system_dlkm_modules/kernel_version
+SYSTEM_DLKM_KVER := $(shell cat $(COMMON_PATH)/prebuilt/system_dlkm_modules/kernel_version 2>/dev/null)
+ifeq ($(SYSTEM_DLKM_KVER),)
+$(error prebuilt/system_dlkm_modules/kernel_version is missing or empty -- \
+        system_dlkm modules would install FLAT, the gki.modprobe glob would \
+        miss, and none of them would load at boot. See the comment above.)
+endif
+BOARD_KERNEL_MODULE_DIRS += $(SYSTEM_DLKM_KVER)
+BOARD_SYSTEM_KERNEL_MODULES_$(SYSTEM_DLKM_KVER) := $(wildcard $(COMMON_PATH)/prebuilt/system_dlkm_modules/*.ko)
+# Without the _LOAD list the build writes an EMPTY modules.load, so all 60
+# modules ship and none is ever listed. The list is stock's own, in stock's
+# order (dependencies matter).
+BOARD_SYSTEM_KERNEL_MODULES_LOAD_$(SYSTEM_DLKM_KVER) := $(shell cat $(COMMON_PATH)/prebuilt/system_dlkm_modules/modules.load 2>/dev/null)
 
 # --- Verified boot ----------------------------------------------------------
 # Rollback index read from this build's vbmeta.img with avbtool:
