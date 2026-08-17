@@ -17,7 +17,16 @@
 set -u
 TOP=$(cd "$(dirname "$0")/../../.." && pwd)
 BP="$TOP/vendor/motorola/sm8635-common/Android.bp"
-CHECK=0; [ "${1:-}" = "--check" ] && CHECK=1
+# Reject unknown arguments rather than silently falling through to APPLY mode.
+# Fixup 4 mutates a BINARY blob in a directory that is not a git repo, at an
+# unchanged file size -- an accidental apply would leave no diff and no way to
+# tell a deliberately patched tree from an accidentally patched one.
+CHECK=0
+case "${1:-}" in
+    "")      ;;
+    --check) CHECK=1 ;;
+    *) echo "usage: $(basename "$0") [--check]" >&2; exit 2 ;;
+esac
 rc=0
 
 [ -f "$BP" ] || { echo "missing $BP -- run setup-makefiles.py first" >&2; exit 1; }
@@ -137,8 +146,114 @@ fix_moto_telephony_xml() {
     return 0
 }
 
+# --- fixup 4: every inbound SMS is swallowed by QCRIL power-on optimisation ---
+# QCRIL buffers each MT SMS until the Android telephony UI declares itself
+# ready, and releases the buffer only when power-on optimisation is OFF or the
+# cached "ATeL UI status" is non-zero. On this ROM the status is never set, so
+# the buffer is never flushed and the message is dropped:
+#
+#   QCRIL_SMS  qcril_qmi_sms_unsolicited_indication_cb_helper:
+#              msg_id (0x0001) QMI_WMS_EVENT_REPORT_IND        <- SMS arrives
+#   qcril_qmi_nas_get_atel_ui_status_from_cache:
+#              .. known ATEL UI STATUS Valid 1, value 0        <- UI "not ready"
+#   QCRIL_SMS  qcril_qmi_sms_update_mt_sms_with_ack_needed_power_opt_buffer:
+#              MT SMS ACK NEEDED Power Opt buffer length 1     <- buffered, then lost
+#
+# THIS IS A WORKAROUND, NOT A CURE -- read this before "improving" it.
+# The sender exists and we already ship it. com.qti.phone (the QtiTelephony apk)
+# has PowerUpOptimization.trySendPhoneReadyForSlot() -> QtiMsgTunnelClient
+# .sendAtelReadyStatus(), which sends QCRIL_EVT_HOOK_SET_ATEL_UI_STATUS
+# (524314 = 0x8001A) via QcRilHook; vendor side, OemHookStable::setUiStatus is
+# the ONLY writer of ui_status=1. It fires only when ALL FOUR of
+# mIsOemHookConnected, mIsRilConnectedForSlot[slot], mIsImsStackUpForSlot[slot]
+# and !mIsAtelReadySentForSlot[slot] hold. On this port one of them never
+# becomes true, so ATEL ready is never sent and the gate never opens. (The apk
+# only began installing at all with e9af8e9 -- before that there was genuinely
+# no sender, which is how this was first mis-diagnosed as "nothing sends it".)
+#
+# DIAGNOSTIC for whoever picks this up: `logcat | grep "Not sending ATEL ready:"`
+# names the failing precondition directly. Making that precondition true is the
+# real cure and would let power-opt stay enabled. Until then, this stands.
+#
+# Stock sets poweron_opt in no prop file, so stock runs power-opt enabled and
+# relies entirely on that app sending the hook.
+#
+# The switch is persist.vendor.radio.poweron_opt, and it is NOT an Android
+# property here: stock's own /vendor/bin/qtisetprop writes qcril_properties_table
+# and falls back to setprop only when the property is ABSENT from that table. It
+# is present (def_val=1), so `setprop persist.vendor.radio.poweron_opt 0` does
+# nothing -- which is why an earlier attempt at this was wrongly recorded as
+# refuted. The DB is the lever.
+#
+# SEEDING, so this survives `fastboot -w`: vendor/etc/init/hw/init.qcom.rc:394
+# copies this prebuilt to /data/vendor/radio/qcrilNr_prebuilt.db on EVERY boot
+# ("copy prebuilt qcril.db files always"), and qcril_db_copy_from_prebuilt
+# streams it into qcrilNr.db whenever /data carries no version row -- i.e. after
+# a wipe. That transfer is a raw file copy, NOT a re-population from def_val, so
+# the `value` column is carried over intact.
+#
+# NOTHING CLOBBERS THE VALUE AFTERWARDS, but not for the obvious reason. The
+# qcrildb_version row carries TWO independent counters: `def_val` (=15) gates
+# upgrade/config/ and upgrade/other/, while `value` (=29) gates upgrade/ecc/
+# (Motorola repurposed the column). A script replays only when
+# local < file_ver <= vendor, and on fresh /data the runtime DB is a byte copy
+# of the prebuilt, so both counters already match and nothing replays at all.
+# The one destructive script -- 0006.0_config.sql, whose
+# `INSERT OR REPLACE INTO qcril_properties_table(property, def_val)` would blank
+# the value column -- needs local < 6, and local is 15 and only ever rises, so it
+# is permanently unreachable. ecc/ 30..58 do run on a fresh DB but never touch
+# this property and never write qcril_properties_table destructively.
+# NOTE: "the highest shipped script is 0015.0" is true only of config/; ecc/
+# ships up to 58. Do not re-derive this argument from the file list alone.
+#
+# Verified on-device. Same SMS, same RIL restart, only this value changed:
+#   before  -> ATEL UI STATUS consulted, "MT SMS ACK NEEDED Power Opt buffer"
+#   after   -> transfer_route_mt_message_valid 1, GsmInboundSmsHandler
+#              EVENT_NEW_SMS, QMI_WMS_SEND_ACK_RESP qmi error 0, message in inbox
+fix_qcril_poweron_opt() {
+    local db="$TOP/vendor/motorola/sm8635-common/proprietary/vendor/etc/qcril_database/qcrilNr.db"
+    local prop="persist.vendor.radio.poweron_opt"
+    local cur n
+
+    # This blob is listed unconditionally in proprietary-files.txt, so absence is
+    # never "ok" -- it means the extract failed and the build cannot succeed.
+    if [ ! -s "$db" ]; then
+        echo "  qcrilNr.db: missing or empty -- re-run extract-files.py"
+        return 1
+    fi
+    if ! command -v sqlite3 >/dev/null 2>&1; then
+        echo "  qcrilNr.db: sqlite3 not on PATH -- cannot apply the inbound-SMS fixup"
+        return 1
+    fi
+    # Keep "unreadable" separate from "row absent": a failed sqlite3 prints
+    # nothing to stdout, so testing the output alone would blame the wrong thing
+    # and send the reader off to re-derive a fixup that is fine.
+    if ! n=$(sqlite3 "$db" "select count(*) from qcril_properties_table where property='$prop';" 2>/dev/null); then
+        echo "  qcrilNr.db: not readable as sqlite -- re-run extract-files.py"
+        return 1
+    fi
+    if [ "$n" != "1" ]; then
+        echo "  qcrilNr.db: '$prop' row is GONE -- the upstream blob changed shape."
+        echo "              Re-derive the inbound-SMS fixup before shipping this."
+        return 1
+    fi
+    cur=$(sqlite3 "$db" "select ifnull(value,'<null>') from qcril_properties_table where property='$prop';")
+    if [ "$cur" = "0" ]; then
+        echo "  qcrilNr.db: power-on optimisation already disabled (ok)"
+        return 0
+    fi
+    if [ "$CHECK" = "1" ]; then
+        echo "  qcrilNr.db: $prop value=$cur, expected 0 -- FIXUP MISSING"
+        return 1
+    fi
+    sqlite3 "$db" "update qcril_properties_table set value='0' where property='$prop';" || return 1
+    echo "  qcrilNr.db: power-on optimisation disabled (was $cur) -- inbound SMS"
+    return 0
+}
+
 echo "fix-vendor-blobs:"
 fix_allocator || rc=1
 fix_wlan_ini  || rc=1
 fix_moto_telephony_xml || rc=1
+fix_qcril_poweron_opt || rc=1
 exit $rc
