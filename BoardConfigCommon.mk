@@ -42,9 +42,19 @@ TARGET_SUPPORTS_64_BIT_APPS := true
 #   Kendrenogen-moto-sm8635-6-6/..._motorola_sm8635     -> kernel 6.6.82
 # and this device runs the 6.1 android14 GKI line, so 6.6 is the wrong branch.
 #
-# prebuilt/Image was extracted from this build's boot.img and verified:
+# prebuilt/Image was extracted from this build's boot.img:
 #   Linux version 6.1.145-android14-11-geaa643a2c0ee-ab14763719
-# which matches `uname -r` on the handset exactly.
+# and it is byte-identical to stock's own boot kernel, i.e. it IS Motorola's
+# shipping kernel for this device.
+#
+# ⚠️ For ten days this variable was DEAD CONFIG and the comment here claimed,
+# falsely, that it matched `uname -r` on the handset. It did not: nothing in the
+# build produced $(PRODUCT_OUT)/kernel (AOSP only declares the path, and
+# TARGET_NO_KERNEL_OVERRIDE below disables the Lineage task that would copy it),
+# so a hand-placed 6.1.128 GKI binary sat there unchallenged and went into every
+# boot.img. Android.mk in this directory now installs this file for real and
+# HARD-FAILS the build if it disagrees with the system_dlkm modules. Read the
+# comment there before touching either.
 TARGET_PREBUILT_KERNEL := $(COMMON_PATH)/prebuilt/Image
 
 # Kernel SOURCE, used only for `make headers_install`. Several qcom-caf modules
@@ -354,8 +364,17 @@ BOARD_VENDOR_KERNEL_MODULES_BLOCKLIST_FILE := $(COMMON_PATH)/prebuilt/vendor_dlk
 # (stock ships /system_dlkm/lib/modules/6.1.145-android14-11-geaa643a2c0ee-...).
 # The script only globs `*`, so any single subdirectory would satisfy it, but
 # matching stock keeps modprobe's own version handling honest.
-# NOTE this is deliberately NOT `uname -r`: our Image is 6.1.128 while these
-# modules are 6.1.145. Same KMI generation (android14-11), and they load fine.
+#
+# ⚠️ This file is now ALSO the kernel/module consistency contract: Android.mk in
+# this directory asserts that TARGET_PREBUILT_KERNEL reports exactly this
+# version and fails the build otherwise. An earlier revision of this comment
+# said the mismatch (6.1.128 Image vs 6.1.145 modules) was harmless because the
+# KMI generation matched and "they load fine". That was wrong and it cost WiFi,
+# Bluetooth and mobile data: these modules are SIGNED, and the kernel refuses a
+# module signed by another build that exports a protected symbol (EACCES, from
+# the !mod->sig_ok gate in verify_exported_symbols). The "443 modules" reading
+# that appeared to justify it was measured on the 6.1.128 module set, which a
+# stale out/ image was still supplying at the time.
 #
 # The version lives in a text file beside the modules, NOT sniffed from a .ko
 # here: soong runs $(shell) with a RESTRICTED PATH, so `strings` is unavailable
@@ -373,6 +392,35 @@ $(error prebuilt/system_dlkm_modules/kernel_version is missing or empty -- \
 endif
 BOARD_KERNEL_MODULE_DIRS += $(SYSTEM_DLKM_KVER)
 BOARD_SYSTEM_KERNEL_MODULES_$(SYSTEM_DLKM_KVER) := $(wildcard $(COMMON_PATH)/prebuilt/system_dlkm_modules/*.ko)
+# The UNSUFFIXED list must stay defined as well, and dropping it was a real bug.
+# build/make/core/Makefile passes $(BOARD_SYSTEM_KERNEL_MODULES) -- unsuffixed,
+# whatever $(kmd) is being iterated -- as argument 7 of the VENDOR call, "list of
+# extra modules that might be dependency of modules in this partition". It is how
+# depmod for vendor_dlkm learns that system_dlkm modules exist. With it empty,
+# seven dependency edges vanished from /vendor_dlkm/lib/modules/modules.dep:
+#   cfg80211 -> rfkill          mac80211 -> libarc4, rfkill
+#   qca_cld3_kiwi_v2 -> rfkill  qca_cld3_qca6750 -> rfkill
+#   btpower -> rfkill           bt_fm_slim -> rfkill
+#   moto_swap -> zsmalloc
+# i.e. the entire wireless stack silently lost its dependency on system_dlkm.
+# (996f2e4 claimed modules.dep had ZERO such references. It had seven; the check
+# behind that claim was run against the already-broken output.)
+#
+# No _LOAD list is set for it on purpose. AOSP defaults the unsuffixed
+# BOARD_SYSTEM_KERNEL_MODULES_LOAD to `false` (Makefile:707-711), and `false` is
+# turned into an empty load list by build-image-kernel-modules-dir, so this
+# declaration feeds depmod WITHOUT generating a second, flat modules.load that
+# would compete with the versioned one the gki.modprobe glob is looking for.
+#
+# It DOES also install the 60 .ko flat, next to the versioned directory, which
+# is why system_dlkm.img is ~23MB rather than ~12MB. That is accepted, not
+# overlooked: the same variable drives both the depmod input and the install and
+# they cannot be separated. The duplication is inert -- the loader's test is
+# `[ ! -e ${dir}/*/modules.load ]`, and `*/` matches only the versioned
+# subdirectory, never the empty top-level modules.load beside these copies.
+# Verified after this change: glob matches, versioned modules.load has 60
+# entries, flat modules.load is 0 bytes.
+BOARD_SYSTEM_KERNEL_MODULES := $(wildcard $(COMMON_PATH)/prebuilt/system_dlkm_modules/*.ko)
 # Without the _LOAD list the build writes an EMPTY modules.load, so all 60
 # modules ship and none is ever listed. The list is stock's own, in stock's
 # order (dependencies matter).
