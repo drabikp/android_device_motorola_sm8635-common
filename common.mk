@@ -18,6 +18,14 @@ PRODUCT_SOONG_NAMESPACES += hardware/qcom-caf/bootctrl
 PRODUCT_SOONG_NAMESPACES += vendor/qcom/opensource/commonsys-intf/display
 PRODUCT_SOONG_NAMESPACES += hardware/qcom-caf/wlan/qcwcn
 
+# Names the two QTI ImsServices as the device default for com.android.phone.
+# AOSP leaves config_ims_mmtel_package/config_ims_rcs_package empty, so without
+# this ImsResolver binds nothing at all and every IMS feature -- VoLTE, the IMS
+# SMS indication callback, the ExtPhone ims-stack-up signal -- is dead. Both
+# apks ship from this tree, so the overlay belongs here and not in the
+# device-specific overlay-lineage. See the comment in the config.xml itself.
+PRODUCT_PACKAGE_OVERLAYS += $(COMMON_PATH)/overlay
+
 # NOTE: the display composer/allocator/mapper are shipped as STOCK BLOBS, not
 # built from source. Building them here was tried and reverted -- every SDM
 # support library in the image is a bit-identical stock blob, and sdm::

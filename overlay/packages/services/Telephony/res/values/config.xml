@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+     Names the device's ImsService implementations for com.android.phone.
+
+     NOTE: keep double hyphens out of this comment. XML forbids them, and the
+     ASCII em-dash style used in the .mk and .bp files of this tree is a hard
+     aapt2 error here ("xml parser error: not well-formed").
+
+     PhoneGlobals reads these two strings and hands them to ImsResolver.make()
+     as the DEVICE default ImsService (PhoneGlobals.java:554). AOSP declares
+     both as empty, so with no overlay ImsResolver has no device configuration
+     at all: it discovers the services via their intent-filter, caches them, and
+     then binds nothing. `dumpsys phone` showed the whole chain idle:
+
+         Configurations:
+           Device:
+             EMERGENCY_MMTEL ->        (blank)
+             MMTEL ->                  (blank)
+             RCS ->                    (blank)
+         Cached ImsServices:
+           org.codeaurora.ims/.ImsService  featureFromMetadata=false, features: []
+         Active controllers:           (empty)
+
+     and the framework logged `registerMmTelCapabilityCallback: registration
+     failed, no ImsService available`. That one unbound service accounted for
+     the null IMS SMS indication callback, the mIsImsStackUpForSlot flag that
+     PowerUpOptimization waits on, and the absent VoLTE plumbing.
+
+     Look for these strings in packages/services/Telephony, NOT in
+     frameworks/base: an earlier attempt to find this searched stock's
+     framework-res.apk, found nothing, and wrongly concluded the mechanism was
+     something else.
+
+     The empty feature list above is a CONSEQUENCE, not a second defect: these
+     services declare no feature metadata in their manifests, so ImsResolver has
+     to discover their features with a dynamic query, and
+     scheduleQueryForFeatures() skips any service that is neither the device
+     default nor an active carrier service. Naming them here is what lets the
+     query run; the features noted below are what the services then reported for
+     themselves.
+
+     One package covers three features: ImsResolver assigns the MMTEL package to
+     FEATURE_EMERGENCY_MMTEL as well (ImsResolver.java:668), which is why there
+     is no separate emergency string to set.
+
+     Both apks ship from this tree (proprietary-files.txt: ims.apk,
+     ImsRcsService.apk), which is why this lives in sm8635-common and not in
+     arcfox/overlay-lineage. It is a PRODUCT_PACKAGE_OVERLAYS overlay rather
+     than an RRO because com.android.phone is built from source here and is not
+     a mainline module, so nothing can replace the APK out of band and take the
+     overlay with it. Contrast rro_overlays/WifiOverlay, which must be an RRO
+     for exactly that reason.
+-->
+<resources>
+    <!-- org.codeaurora.ims reported {EMERGENCY_MMTEL, MMTEL} on both slots. -->
+    <string name="config_ims_mmtel_package" translatable="false">org.codeaurora.ims</string>
+
+    <!-- vendor.qti.imsrcs reported {RCS} on both slots. -->
+    <string name="config_ims_rcs_package" translatable="false">vendor.qti.imsrcs</string>
+</resources>
