@@ -27,7 +27,23 @@
 # which cost WiFi (cfg80211 needs rfkill), Bluetooth (btpower, bt_fm_slim) and
 # mobile data (tipc -> AF_TIPC -> dsi_init -> OEM_DCFAILCAUSE_4).
 #
-# The mechanism is worth stating exactly, because the obvious reading is wrong.
+# ⚠️ CORRECTED 2026-08-18 -- the original text here overstated the constraint.
+# It is NOT all 347 modules. The gate has TWO conditions and vendor modules fail
+# only the first:
+#   * the 60 system_dlkm .ko are GOOGLE'S GKI modules, SIGNED with a per-build
+#     key, and are bound 1:1 to the exact GKI build. These are what fail EACCES.
+#   * the 287 vendor_dlkm .ko are UNSIGNED -- AOSP states plainly that "module
+#     signing is not supported for GKI vendor modules" -- and export no
+#     protected symbols, so they load across GKI builds within one KMI
+#     generation (android14-11 here). Verified locally: strings on cfg80211.ko,
+#     qca_cld3_kiwi_v2.ko, msm_kgsl.ko, btpower.ko shows no signature trailer,
+#     while tipc.ko/rfkill.ko/libarc4.ko are signed.
+# Also: the kernel is GOOGLE'S certified GKI, not a Motorola build.
+#   ab14763719 = android14-6.1-2025-09_r28,  ab13748990 = android14-6.1-2025-03_r12.
+# CONSEQUENCE: a newer certified GKI CAN be adopted for CVE fixes -- swap
+# boot.img AND its matching system_dlkm together, leave vendor_dlkm alone.
+#
+# The mechanism, stated exactly, because the obvious reading is wrong.
 # It is NOT a version check. kernel/module/main.c:1283 (verify_exported_symbols):
 #
 #     if (!mod->sig_ok && gki_is_module_protected_export(...)) {
@@ -37,12 +53,15 @@
 #
 # The gate is mod->sig_ok -- whether the module's appended signature verifies
 # against the key built into the running kernel. CONFIG_MODULE_SIG_PROTECT=y and
-# there is no sig_enforce parameter to turn it off. So a module set is bound to
-# the kernel it was SIGNED with, and mixing GKI builds is fatal regardless of how
-# close the version numbers look. Proven by A/B on the handset: 6.1.128 tipc.ko
-# insmods rc=0, 6.1.145 tipc.ko gives EACCES, same kernel, same second.
+# there is no sig_enforce parameter to turn it off. So a SIGNED module set is
+# bound to the kernel it was signed with, and mixing GKI builds is fatal for
+# those modules regardless of how close the version numbers look. Proven by A/B
+# on the handset: 6.1.128 tipc.ko insmods rc=0, 6.1.145 tipc.ko gives EACCES,
+# same kernel, same second. (tipc is system_dlkm, hence signed. An unsigned
+# vendor_dlkm module in the same experiment would have loaded either way.)
 #
-# Hence the assertion below. Both halves must come from one GKI build.
+# Hence the assertion below. It guards the system_dlkm half specifically: that
+# is the half that must come from the same GKI build as the kernel.
 
 LOCAL_PATH := $(call my-dir)
 
@@ -81,11 +100,11 @@ $(PRODUCT_OUT)/kernel: $(TARGET_PREBUILT_KERNEL) $(SM8635_KVER_FILE)
 	   echo "***   system_dlkm : $$want"                                        >&2; \
 	   echo "***                 ($(SM8635_KVER_FILE))"                         >&2; \
 	   echo "***"                                                               >&2; \
-	   echo "*** These modules are SIGNED for their own GKI build. Loading them">&2; \
+	   echo "*** system_dlkm modules are SIGNED for their own GKI build.       ">&2; \
 	   echo "*** on any other kernel fails with EACCES on every module that"    >&2; \
 	   echo "*** exports a protected symbol -- rfkill, libarc4, mii, tipc and 8">&2; \
 	   echo "*** others -- which silently costs WiFi, Bluetooth and mobile data.">&2; \
-	   echo "*** Ship both halves from one GKI build."                          >&2; \
+	   echo "*** Ship the kernel and system_dlkm from ONE GKI build.            ">&2; \
 	   echo "***"                                                               >&2; \
 	   exit 1; \
 	 fi
