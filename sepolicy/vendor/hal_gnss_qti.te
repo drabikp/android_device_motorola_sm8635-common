@@ -1,0 +1,27 @@
+# The GNSS HAL cannot reach the framework sensor service.
+#
+#   avc: denied { find } for pid=1913 uid=1021
+#     name=android.frameworks.sensorservice.ISensorManager/default
+#     scontext=u:r:vendor_hal_gnss_qti:s0
+#     tcontext=u:object_r:fwk_sensor_service:s0 tclass=service_manager permissive=0
+#
+# The consumer is libsensorndkbridge.so, which the QTI GNSS HAL uses for
+# sensor-assisted positioning -- SAP / motion aiding, i.e. dead reckoning and
+# stationary detection between fixes.
+#
+# ⚠️ THIS IS NOT WHY A FIX TAKES TIME, AND IT IS NOT WHY GPS LOOKED BROKEN.
+# GPS works: measured outdoors, timeUncertaintyNs 6.0e9 -> 149 (the engine
+# demodulated GNSS time directly, which NTP injection at +/-15ms cannot produce)
+# and horizontalAccuracyMeters 155446 -> 21.2. Acquisition needs sky view, not
+# this rule. Ship it because stock grants it and we should not diverge, not
+# because it fixes a symptom.
+#
+# Stock's counterpart, verbatim from its precompiled policy
+# (/vendor/etc/selinux/vendor_sepolicy.cil):
+#   (allow vendor_hal_gnss_qti fwk_sensor_service_34_0 (service_manager (find)))
+# fwk_sensor_service_34_0 is the versioned mapping type; the unversioned
+# fwk_sensor_service is what our denial names and what this tree has.
+#
+# Note rild takes the same denial against the same service. Left alone here:
+# nothing has been shown to depend on it, and this file is about GNSS.
+allow vendor_hal_gnss_qti fwk_sensor_service:service_manager find;
