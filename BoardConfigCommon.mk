@@ -119,6 +119,7 @@ TARGET_KERNEL_EXT_MODULES := \
     qcom/opensource/camera-kernel \
     qcom/opensource/audio-kernel \
     qcom/opensource/wlan/platform \
+    qcom/opensource/wlan/qcacld-3.0/.kiwi_v2 \
     qcom/opensource/bt-kernel \
     qcom/opensource/datarmnet-ext/mem \
     qcom/opensource/dataipa/drivers/platform/msm \
@@ -244,18 +245,18 @@ BOARD_PREBUILT_DTBIMAGE_DIR := $(COMMON_PATH)/prebuilt/dtb
 # Motorola's prebuilt first-stage modules, lifted from stock's vendor_ramdisk.
 # modules.load (99 entries) is stock's and fixes load ORDER, which matters.
 # BOARD_VENDOR_RAMDISK_KERNEL_MODULES: now populated by kernel.mk (load list below)
-BOARD_VENDOR_RAMDISK_KERNEL_MODULES_LOAD := $(shell cat $(COMMON_PATH)/prebuilt/modules/modules.load 2>/dev/null)
+BOARD_VENDOR_RAMDISK_KERNEL_MODULES_LOAD := $(strip $(shell cat $(COMMON_PATH)/modules/modules.list.vendor_ramdisk 2>/dev/null))
 
 # RECOVERY loads a different, larger set (277 entries vs 99). Omitting this is
 # what broke TWRP: with our first vendor_boot, TWRP -- a known-good recovery
 # ramdisk that boots fine on stock vendor_boot -- stopped booting entirely.
 # That makes "does TWRP still boot?" a fast sanity check on vendor_boot.
-BOARD_VENDOR_RAMDISK_RECOVERY_KERNEL_MODULES_LOAD := $(shell cat $(COMMON_PATH)/prebuilt/modules/modules.load.recovery 2>/dev/null)
+BOARD_VENDOR_RAMDISK_RECOVERY_KERNEL_MODULES_LOAD := $(strip $(shell cat $(COMMON_PATH)/modules/modules.list.recovery 2>/dev/null))
 
 # Qualcomm's blocklist (62 entries: test/torture modules, unused tuners,
 # qca_cld3_kiwi, vsock...). Without it those modules load anyway, which stock
 # deliberately prevents.
-BOARD_VENDOR_RAMDISK_KERNEL_MODULES_BLOCKLIST_FILE := $(COMMON_PATH)/prebuilt/modules/modules.blocklist
+BOARD_VENDOR_RAMDISK_KERNEL_MODULES_BLOCKLIST_FILE := $(COMMON_PATH)/modules/modules.blocklist.ramdisk
 
 # Verbatim from stock vendor_boot's bootconfig and vendor cmdline. androidboot.*
 # must go in BOARD_BOOTCONFIG (bootconfig section), the rest in the cmdline.
@@ -430,16 +431,18 @@ TARGET_COPY_OUT_SYSTEM_DLKM := system_dlkm
 # kernel.mk validates every named module exists in the build intermediates and
 # hard-errors otherwise, so the list must describe what we actually build.
 # ⚠️ THREE modules are deliberately absent vs stock's 287:
-#   qca_cld3_kiwi_v2.ko  - WLAN. Motorola's qcacld does not build (16 attempts,
-#                          HANDOFF 0.28); Xiaomi's variant builds but needs
-#                          Xiaomi's cnss2, i.e. the whole wlan subtree swapped.
-#                          ⚠️ THE DEVICE HAS NO WIFI UNTIL THAT IS RESOLVED.
 #   qca_cld3_qca6750.ko  - the other WLAN variant; arcfox uses kiwi_v2
 #                          (CONFIG_MOT_CNSS_KIWI_V2), so this one never loads.
+# WLAN NOTE: the whole qcom/opensource/wlan subtree is LineageOS's (Xiaomi's),
+# not Motorola's -- Motorola's qcacld-3.0 does not build (16 documented
+# attempts, HANDOFF 0.28) and its qcacld requires its own cnss2, which exports
+# cnss_register_driver_async_data_cb that Motorola's platform lacks. Taking the
+# subtree wholesale is the only coherent option; a hybrid fails at modpost.
+# Motorola's copy is kept beside it as wlan.motorola-unbuildable/.
 #   moto_swap.ko         - kernel-side hybridswap memcg fields were never
 #                          published; stock parity impossible from source.
 BOARD_VENDOR_KERNEL_MODULES_LOAD := $(strip $(shell cat $(COMMON_PATH)/modules/modules.list.vendor_dlkm 2>/dev/null))
-BOARD_VENDOR_KERNEL_MODULES_BLOCKLIST_FILE := $(COMMON_PATH)/prebuilt/vendor_dlkm_modules/modules.blocklist
+BOARD_VENDOR_KERNEL_MODULES_BLOCKLIST_FILE := $(COMMON_PATH)/modules/modules.blocklist.vendor_dlkm
 # system_dlkm modules MUST be installed into a VERSIONED subdirectory.
 #
 # The loader is stock's own /vendor/bin/system_dlkm_modprobe.sh, run by the
@@ -484,47 +487,18 @@ BOARD_VENDOR_KERNEL_MODULES_BLOCKLIST_FILE := $(COMMON_PATH)/prebuilt/vendor_dlk
 #   strings -a prebuilt/system_dlkm_modules/tipc.ko \
 #     | sed -n 's/^vermagic=\([^ ]*\).*/\1/p' | head -1 \
 #     > prebuilt/system_dlkm_modules/kernel_version
-SYSTEM_DLKM_KVER := $(shell cat $(COMMON_PATH)/prebuilt/system_dlkm_modules/kernel_version 2>/dev/null)
-ifeq ($(SYSTEM_DLKM_KVER),)
-$(error prebuilt/system_dlkm_modules/kernel_version is missing or empty -- \
-        system_dlkm modules would install FLAT, the gki.modprobe glob would \
-        miss, and none of them would load at boot. See the comment above.)
-endif
-BOARD_KERNEL_MODULE_DIRS += $(SYSTEM_DLKM_KVER)
-BOARD_SYSTEM_KERNEL_MODULES_$(SYSTEM_DLKM_KVER) := $(wildcard $(COMMON_PATH)/prebuilt/system_dlkm_modules/*.ko)
-# The UNSUFFIXED list must stay defined as well, and dropping it was a real bug.
-# build/make/core/Makefile passes $(BOARD_SYSTEM_KERNEL_MODULES) -- unsuffixed,
-# whatever $(kmd) is being iterated -- as argument 7 of the VENDOR call, "list of
-# extra modules that might be dependency of modules in this partition". It is how
-# depmod for vendor_dlkm learns that system_dlkm modules exist. With it empty,
-# seven dependency edges vanished from /vendor_dlkm/lib/modules/modules.dep:
-#   cfg80211 -> rfkill          mac80211 -> libarc4, rfkill
-#   qca_cld3_kiwi_v2 -> rfkill  qca_cld3_qca6750 -> rfkill
-#   btpower -> rfkill           bt_fm_slim -> rfkill
-#   moto_swap -> zsmalloc
-# i.e. the entire wireless stack silently lost its dependency on system_dlkm.
-# (996f2e4 claimed modules.dep had ZERO such references. It had seven; the check
-# behind that claim was run against the already-broken output.)
-#
-# No _LOAD list is set for it on purpose. AOSP defaults the unsuffixed
-# BOARD_SYSTEM_KERNEL_MODULES_LOAD to `false` (Makefile:707-711), and `false` is
-# turned into an empty load list by build-image-kernel-modules-dir, so this
-# declaration feeds depmod WITHOUT generating a second, flat modules.load that
-# would compete with the versioned one the gki.modprobe glob is looking for.
-#
-# It DOES also install the 60 .ko flat, next to the versioned directory, which
-# is why system_dlkm.img is ~23MB rather than ~12MB. That is accepted, not
-# overlooked: the same variable drives both the depmod input and the install and
-# they cannot be separated. The duplication is inert -- the loader's test is
-# `[ ! -e ${dir}/*/modules.load ]`, and `*/` matches only the versioned
-# subdirectory, never the empty top-level modules.load beside these copies.
-# Verified after this change: glob matches, versioned modules.load has 60
-# entries, flat modules.load is 0 bytes.
-# BOARD_SYSTEM_KERNEL_MODULES: populated by kernel.mk from the source build
-# Without the _LOAD list the build writes an EMPTY modules.load, so all 60
-# modules ship and none is ever listed. The list is stock's own, in stock's
-# order (dependencies matter).
-BOARD_SYSTEM_KERNEL_MODULES_LOAD_$(SYSTEM_DLKM_KVER) := $(strip $(shell cat $(COMMON_PATH)/modules/modules.list.system_dlkm 2>/dev/null))
+# SOURCE BUILD: no SYSTEM_DLKM_KVER machinery any more.
+# All of the above (versioned install dir, the kernel_version text file, the
+# unsuffixed BOARD_SYSTEM_KERNEL_MODULES depmod feed) existed to make PREBUILT
+# system_dlkm .ko land in lib/modules/<kver>/ so stock's gki.modprobe glob
+# (`${dir}/*/modules.load`) would find them. kernel.mk's modules_install does
+# that natively from the source build -- it installs into
+# lib/modules/$(cat include/config/kernel.release)/ -- and populates both
+# BOARD_SYSTEM_KERNEL_MODULES and the depmod inputs itself, so the seven
+# cfg80211->rfkill style dependency edges documented above are preserved
+# without the manual plumbing. Keeping the old block would also hard-error at
+# config time, since it read a file that no longer exists.
+BOARD_SYSTEM_KERNEL_MODULES_LOAD := $(strip $(shell cat $(COMMON_PATH)/modules/modules.list.system_dlkm 2>/dev/null))
 
 # --- Verified boot ----------------------------------------------------------
 # Rollback index read from this build's vbmeta.img with avbtool:

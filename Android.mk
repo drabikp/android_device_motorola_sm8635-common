@@ -70,49 +70,9 @@ ifeq ($(TARGET_DEVICE),arcfox)
 # The version the system_dlkm modules were built and signed for. Same file
 # 996f2e4 uses to name the versioned module directory, so the kernel and the
 # modules are checked against a single source of truth.
-SM8635_KVER_FILE := $(LOCAL_PATH)/prebuilt/system_dlkm_modules/kernel_version
+# The prebuilt-kernel install rule and its version guard are GONE with the
+# source build: kernel.mk owns $(PRODUCT_OUT)/kernel, and system_dlkm
+# modules are signed by the same build that produces the Image, so the
+# mismatch this guarded against cannot occur.
 
-# Install prebuilt/Image as the kernel, and assert it matches.
-#
-# The version is read here in a RECIPE, not in a $(shell) at parse time: soong
-# runs $(shell) with a restricted PATH where `strings` does not exist, and an
-# earlier attempt to sniff vermagic that way silently expanded to empty (see the
-# note on 996f2e4). A recipe runs under a normal shell. `grep -a` reads the
-# binary without needing `strings` at all.
-# NOTE: the target is spelled out rather than written as $(INSTALLED_KERNEL_TARGET).
-# Android.mk files are included by main.mk BEFORE build/make/core/Makefile, which
-# is where INSTALLED_KERNEL_TARGET is defined, so that variable is still empty
-# here -- using it yields a rule with no target, which make accepts silently and
-# ninja then reports as "missing and no known rule to make it".
-# Guard rule below is only meaningful for a PREBUILT kernel; with the source
-# build (kernel.mk) TARGET_PREBUILT_KERNEL is unset and kernel.mk owns
-# $(PRODUCT_OUT)/kernel.
-ifneq ($(TARGET_PREBUILT_KERNEL),)
-$(PRODUCT_OUT)/kernel: $(TARGET_PREBUILT_KERNEL) $(SM8635_KVER_FILE)
-	@echo "Kernel: $@ <- $(TARGET_PREBUILT_KERNEL)"
-	@have=`grep -a -o -m1 'Linux version [^ ]*' $(TARGET_PREBUILT_KERNEL) | cut -d' ' -f3`; \
-	 want=`cat $(SM8635_KVER_FILE)`; \
-	 if [ -z "$$have" ]; then \
-	   echo "*** cannot read a kernel version out of $(TARGET_PREBUILT_KERNEL)" >&2; \
-	   exit 1; \
-	 fi; \
-	 if [ "$$have" != "$$want" ]; then \
-	   echo "***"                                                               >&2; \
-	   echo "*** KERNEL / system_dlkm MISMATCH -- refusing to build."           >&2; \
-	   echo "***   kernel      : $$have"                                        >&2; \
-	   echo "***                 ($(TARGET_PREBUILT_KERNEL))"                   >&2; \
-	   echo "***   system_dlkm : $$want"                                        >&2; \
-	   echo "***                 ($(SM8635_KVER_FILE))"                         >&2; \
-	   echo "***"                                                               >&2; \
-	   echo "*** system_dlkm modules are SIGNED for their own GKI build.       ">&2; \
-	   echo "*** on any other kernel fails with EACCES on every module that"    >&2; \
-	   echo "*** exports a protected symbol -- rfkill, libarc4, mii, tipc and 8">&2; \
-	   echo "*** others -- which silently costs WiFi, Bluetooth and mobile data.">&2; \
-	   echo "*** Ship the kernel and system_dlkm from ONE GKI build.            ">&2; \
-	   echo "***"                                                               >&2; \
-	   exit 1; \
-	 fi
-	$(copy-file-to-target)
-
-endif
 endif
