@@ -42,41 +42,129 @@ TARGET_SUPPORTS_64_BIT_APPS := true
 #   Kendrenogen-moto-sm8635-6-6/..._motorola_sm8635     -> kernel 6.6.82
 # and this device runs the 6.1 android14 GKI line, so 6.6 is the wrong branch.
 #
-# prebuilt/Image was extracted from this build's boot.img:
-#   Linux version 6.1.145-android14-11-geaa643a2c0ee-ab14763719
-# and it is byte-identical to stock's own boot kernel, i.e. it IS Motorola's
-# shipping kernel for this device.
+# KERNEL: BUILT FROM SOURCE via vendor/lineage/build/tasks/kernel.mk
+# (Route A, peridot/sm8550-common shape -- see HANDOFF-NEXT.md 0.26/0.28).
 #
-# ⚠️ For ten days this variable was DEAD CONFIG and the comment here claimed,
-# falsely, that it matched `uname -r` on the handset. It did not: nothing in the
-# build produced $(PRODUCT_OUT)/kernel (AOSP only declares the path, and
-# TARGET_NO_KERNEL_OVERRIDE below disables the Lineage task that would copy it),
-# so a hand-placed 6.1.128 GKI binary sat there unchallenged and went into every
-# boot.img. Android.mk in this directory now installs this file for real and
-# HARD-FAILS the build if it disagrees with the system_dlkm modules. Read the
-# comment there before touching either.
-TARGET_PREBUILT_KERNEL := $(COMMON_PATH)/prebuilt/Image
-
-# Kernel SOURCE, used only for `make headers_install`. Several qcom-caf modules
-# that LineageOS builds from source (bootctrl/gpt-utils, bt/libbt-vendor,
-# common, nqnfcinfo) pull vendor/lineage's `generated_kernel_headers`, which
-# shells out to the kernel tree at TARGET_KERNEL_SOURCE. That defaults to
-# kernel/<manufacturer>/<device> and failed with:
-#   make: *** kernel/motorola/arcfox: No such file or directory.
-#
-# There is no Motorola arcfox kernel source (see above), so this points at
-# LineageOS's own SM8635 kernel: same SoC, same 6.1 android14 GKI line
-# (6.1.174 here vs 6.1.145 shipping). UAPI headers are the kernel's userspace
-# ABI and are SoC-level, so this is a reasonable stand-in. The kernel itself is
-# NOT built; TARGET_PREBUILT_KERNEL above supplies the actual Image.
+# History: until 2026-08-28 this shipped a PREBUILT Google GKI Image plus 287
+# prebuilt vendor_dlkm/.60 system_dlkm .ko -- a hard blocker for official
+# LineageOS (charter: "MUST build all feasible modules from source"; census:
+# 0 committed .ko across all 310 official devices). The kernel tree is
+# MotorolaMobilityLLC/kernel-msm @ MMI-W1UXS36H.72-45-4-1 merged forward to
+# ACK android14-6.1-2025-09_r34 (same certified 6.1.145 family the device
+# ran on the prebuilt; KMI-invisible: 20,475 CRC matches / 0 mismatches vs
+# the shipped module set). TARGET_NO_KERNEL_OVERRIDE (a GSI/Cuttlefish-only
+# variable; 0 physical devices upstream) is GONE -- kernel.mk now runs.
 TARGET_KERNEL_SOURCE := kernel/motorola/sm8635
+TARGET_KERNEL_CONFIG := \
+    gki_defconfig \
+    vendor/pineapple_GKI.config \
+    vendor/ext_config/moto-pineapple.config \
+    vendor/ext_config/moto-pineapple-arcfox.config \
+    vendor/ext_config/arcfox-signing.config
+# clang-r547379 (clang 20): the Motorola tree predates clang-21-only warnings.
+# KCFLAGS demotes 27 pre-existing printk-format sites in Motorola's own code
+# (walt.c, gunyah, mhi, qcom-pdc, af_qrtr) that -Werror would fatalize.
+TARGET_KERNEL_CLANG_VERSION := r547379
+# Use the HOST glibc for kernel host tools, not AOSP's 2.17 sysroot: with the
+# old sysroot, host tools compiled against modern headers fail to link
+# (undefined __isoc23_strtol).
+TARGET_KERNEL_LIBC_SYSROOT_USE := host
 
-# Do not run LineageOS's kernel build tasks. vendor/lineage/build/tasks/kernel.mk
-# is gated on this; without it, the presence of TARGET_KERNEL_SOURCE above makes
-# it demand TARGET_KERNEL_CONFIG and hard-fail with "NO KERNEL CONFIG". We only
-# want the source for headers_install, never a kernel compile — the shipping
-# GKI Image is supplied by TARGET_PREBUILT_KERNEL.
-TARGET_NO_KERNEL_OVERRIDE := true
+# ⚠️ These REPLACE the HOSTCFLAGS/HOSTLDFLAGS that BoardConfigKernel.mk sets --
+# TARGET_KERNEL_ADDITIONAL_FLAGS lands later on the make command line, so a
+# partial override silently drops the whole upstream value (that is what broke
+# the first attempt: it removed the OpenSSL include AND the sysroot at once).
+# Deliberately NOT pointing at prebuilts/kernel-build-tools: its BoringSSL
+# libcrypto REFUSES sha256 module signing ("only supports SHA1 signing"), and
+# our signing fragment requires sha256. Host OpenSSL 3.x does both, and the
+# r34 merge fixed certs/extract-cert.c so it compiles against it cleanly.
+# -Wno-...-discards-qualifiers: tools/lib/bpf/libbpf.c:10746 still assigns a
+# const char * to char * and host clang makes that an error.
+# KCFLAGS=-Wno-error (not just =format): this Jan-2026 vendor tree predates
+# the toolchain, and several subtrees carry warnings that newer clang
+# fatalizes -- printk formats in walt/gunyah/mhi/qcom-pdc/af_qrtr, and
+# -Wenum-compare in dataipa ipa_usb.c. Demoting warnings-as-errors does not
+# hide actual errors, and mirrors what the standalone module builds used.
+TARGET_KERNEL_ADDITIONAL_FLAGS := TARGET_PRODUCT=$(PRODUCT_DEVICE) \
+    KCFLAGS=-Wno-error \
+    LLVM=1 LLVM_IAS=1 \
+    HOSTCFLAGS="-Wno-error -Wno-incompatible-pointer-types-discards-qualifiers" \
+    HOSTLDFLAGS="-fuse-ld=lld --rtlib=compiler-rt" \
+    TARGET_BOARD_PLATFORM=$(TARGET_BOARD_PLATFORM)
+
+# External modules, DEPENDENCY ORDER (symvers chains -- see the per-module
+# Makefile "arcfox kernel.mk port" blocks and build-kernel-modules.sh):
+# securemsm before camera/display/bt; mm-drivers before graphics; dsp+synx
+# before eva; mmrm before video/camera; datarmnet-ext/mem then dataipa then
+# datarmnet/core then the ext family; sensors/mmi_relay/mmi_info/display
+# before touchscreen_mmi before the panel drivers; chargers chain bm_adsp ->
+# qti_glink -> rest.
+# NOT LISTED: moto_swap (kernel-side hybridswap unpublished -- prebuilt
+# exception), qcacld (WLAN: built out-of-band pending source resolution,
+# HANDOFF-NEXT 0.28).
+TARGET_KERNEL_EXT_MODULE_ROOT := kernel/motorola/sm8635-modules
+TARGET_KERNEL_EXT_MODULES := \
+    qcom/opensource/mmrm-driver \
+    qcom/opensource/securemsm-kernel \
+    qcom/opensource/mm-drivers/hw_fence \
+    qcom/opensource/mm-drivers/msm_ext_display \
+    qcom/opensource/mm-drivers/sync_fence \
+    qcom/opensource/synx-kernel \
+    qcom/opensource/dsp-kernel \
+    qcom/opensource/eva-kernel \
+    qcom/opensource/mm-sys-kernel/ubwcp \
+    qcom/opensource/display-drivers/msm \
+    qcom/opensource/graphics-kernel \
+    qcom/opensource/video-driver \
+    qcom/opensource/camera-kernel \
+    qcom/opensource/audio-kernel \
+    qcom/opensource/wlan/platform \
+    qcom/opensource/bt-kernel \
+    qcom/opensource/datarmnet-ext/mem \
+    qcom/opensource/dataipa/drivers/platform/msm \
+    qcom/opensource/datarmnet/core \
+    qcom/opensource/datarmnet-ext/aps \
+    qcom/opensource/datarmnet-ext/offload \
+    qcom/opensource/datarmnet-ext/shs \
+    qcom/opensource/datarmnet-ext/perf \
+    qcom/opensource/datarmnet-ext/perf_tether \
+    qcom/opensource/datarmnet-ext/sch \
+    qcom/opensource/datarmnet-ext/wlan \
+    nxp/opensource/driver \
+    motorola/drivers/misc/utag \
+    motorola/drivers/mmi_annotate \
+    motorola/drivers/mmi_info \
+    motorola/drivers/mmi_relay \
+    motorola/drivers/mmi_qcom_minidump \
+    motorola/drivers/misc/mmi_sys_temp \
+    motorola/drivers/sensors \
+    motorola/drivers/moto_con_dfpar \
+    motorola/drivers/moto_binder \
+    motorola/drivers/moto_mmap_fault \
+    motorola/drivers/moto_reboot_reason \
+    motorola/drivers/moto_f_usbnet \
+    motorola/drivers/moto_sched \
+    motorola/drivers/power/cw2217b_fg_mmi \
+    motorola/drivers/power/mmi_charger \
+    motorola/drivers/power/bm_adsp_ulog \
+    motorola/drivers/power/qti_glink_charger \
+    motorola/drivers/power/sc760x_charger_mmi \
+    motorola/drivers/power/qpnp_adaptive_charge \
+    motorola/drivers/power/mmi_lpd_mitigate \
+    motorola/drivers/input/misc/fpc_fps_mmi \
+    motorola/drivers/input/misc/anc_fps_mmi \
+    motorola/drivers/input/misc/goodix_fod_mmi \
+    motorola/drivers/input/touchscreen/touchscreen_mmi \
+    motorola/drivers/input/touchscreen/focaltech_touch_v3_5 \
+    motorola/drivers/input/touchscreen/goodix_berlin_mmi \
+    motorola/drivers/input/touchscreen/goodix_gt96x_mmi \
+    motorola/drivers/ese/st54spi_gpio \
+    motorola/drivers/misc/mmi_stow \
+    motorola/drivers/misc/suspend_marker \
+    motorola/drivers/misc/sx937x_multi \
+    motorola/drivers/regulator/wl2868c \
+    motorola/drivers/watchdogtest \
+    motorola/drivers/nfc/st21nfc
 BOARD_KERNEL_IMAGE_NAME := Image
 TARGET_KERNEL_ARCH := arm64
 BOARD_KERNEL_BASE := 0x00000000
@@ -155,7 +243,7 @@ BOARD_PREBUILT_DTBIMAGE_DIR := $(COMMON_PATH)/prebuilt/dtb
 
 # Motorola's prebuilt first-stage modules, lifted from stock's vendor_ramdisk.
 # modules.load (99 entries) is stock's and fixes load ORDER, which matters.
-BOARD_VENDOR_RAMDISK_KERNEL_MODULES := $(wildcard $(COMMON_PATH)/prebuilt/modules/*.ko)
+# BOARD_VENDOR_RAMDISK_KERNEL_MODULES: now populated by kernel.mk (load list below)
 BOARD_VENDOR_RAMDISK_KERNEL_MODULES_LOAD := $(shell cat $(COMMON_PATH)/prebuilt/modules/modules.load 2>/dev/null)
 
 # RECOVERY loads a different, larger set (277 entries vs 99). Omitting this is
@@ -337,8 +425,20 @@ TARGET_COPY_OUT_SYSTEM_DLKM := system_dlkm
 # 6.1.128-android14-11 -- a different sublevel but the SAME KMI generation
 # (android14-11), so those modules would also be ABI-compatible. We use stock's
 # anyway, since they match our Image exactly.
-BOARD_VENDOR_KERNEL_MODULES := $(wildcard $(COMMON_PATH)/prebuilt/vendor_dlkm_modules/*.ko)
-BOARD_VENDOR_KERNEL_MODULES_LOAD := $(shell cat $(COMMON_PATH)/prebuilt/vendor_dlkm_modules/modules.load 2>/dev/null)
+# BOARD_VENDOR_KERNEL_MODULES: now populated by kernel.mk from the source build
+# Load lists live in the DEVICE TREE now (peridot pattern), not in prebuilt/:
+# kernel.mk validates every named module exists in the build intermediates and
+# hard-errors otherwise, so the list must describe what we actually build.
+# ⚠️ THREE modules are deliberately absent vs stock's 287:
+#   qca_cld3_kiwi_v2.ko  - WLAN. Motorola's qcacld does not build (16 attempts,
+#                          HANDOFF 0.28); Xiaomi's variant builds but needs
+#                          Xiaomi's cnss2, i.e. the whole wlan subtree swapped.
+#                          ⚠️ THE DEVICE HAS NO WIFI UNTIL THAT IS RESOLVED.
+#   qca_cld3_qca6750.ko  - the other WLAN variant; arcfox uses kiwi_v2
+#                          (CONFIG_MOT_CNSS_KIWI_V2), so this one never loads.
+#   moto_swap.ko         - kernel-side hybridswap memcg fields were never
+#                          published; stock parity impossible from source.
+BOARD_VENDOR_KERNEL_MODULES_LOAD := $(strip $(shell cat $(COMMON_PATH)/modules/modules.list.vendor_dlkm 2>/dev/null))
 BOARD_VENDOR_KERNEL_MODULES_BLOCKLIST_FILE := $(COMMON_PATH)/prebuilt/vendor_dlkm_modules/modules.blocklist
 # system_dlkm modules MUST be installed into a VERSIONED subdirectory.
 #
@@ -420,11 +520,11 @@ BOARD_SYSTEM_KERNEL_MODULES_$(SYSTEM_DLKM_KVER) := $(wildcard $(COMMON_PATH)/pre
 # subdirectory, never the empty top-level modules.load beside these copies.
 # Verified after this change: glob matches, versioned modules.load has 60
 # entries, flat modules.load is 0 bytes.
-BOARD_SYSTEM_KERNEL_MODULES := $(wildcard $(COMMON_PATH)/prebuilt/system_dlkm_modules/*.ko)
+# BOARD_SYSTEM_KERNEL_MODULES: populated by kernel.mk from the source build
 # Without the _LOAD list the build writes an EMPTY modules.load, so all 60
 # modules ship and none is ever listed. The list is stock's own, in stock's
 # order (dependencies matter).
-BOARD_SYSTEM_KERNEL_MODULES_LOAD_$(SYSTEM_DLKM_KVER) := $(shell cat $(COMMON_PATH)/prebuilt/system_dlkm_modules/modules.load 2>/dev/null)
+BOARD_SYSTEM_KERNEL_MODULES_LOAD_$(SYSTEM_DLKM_KVER) := $(strip $(shell cat $(COMMON_PATH)/modules/modules.list.system_dlkm 2>/dev/null))
 
 # --- Verified boot ----------------------------------------------------------
 # Rollback index read from this build's vbmeta.img with avbtool:

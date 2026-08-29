@@ -84,6 +84,10 @@ SM8635_KVER_FILE := $(LOCAL_PATH)/prebuilt/system_dlkm_modules/kernel_version
 # is where INSTALLED_KERNEL_TARGET is defined, so that variable is still empty
 # here -- using it yields a rule with no target, which make accepts silently and
 # ninja then reports as "missing and no known rule to make it".
+# Guard rule below is only meaningful for a PREBUILT kernel; with the source
+# build (kernel.mk) TARGET_PREBUILT_KERNEL is unset and kernel.mk owns
+# $(PRODUCT_OUT)/kernel.
+ifneq ($(TARGET_PREBUILT_KERNEL),)
 $(PRODUCT_OUT)/kernel: $(TARGET_PREBUILT_KERNEL) $(SM8635_KVER_FILE)
 	@echo "Kernel: $@ <- $(TARGET_PREBUILT_KERNEL)"
 	@have=`grep -a -o -m1 'Linux version [^ ]*' $(TARGET_PREBUILT_KERNEL) | cut -d' ' -f3`; \
@@ -110,4 +114,5 @@ $(PRODUCT_OUT)/kernel: $(TARGET_PREBUILT_KERNEL) $(SM8635_KVER_FILE)
 	 fi
 	$(copy-file-to-target)
 
+endif
 endif

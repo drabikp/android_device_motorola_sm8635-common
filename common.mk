@@ -2,6 +2,18 @@
 
 COMMON_PATH := device/motorola/sm8635-common
 
+# The external kernel modules are built OUT OF TREE by
+# vendor/lineage/build/tasks/kernel.mk (TARGET_KERNEL_EXT_MODULE_ROOT), so the
+# Android build must not walk them:
+#  - their Android.bp files re-define header modules that hardware/qcom-caf/common
+#    already provides (qti_audio_kernel_uapi, qti_display_kernel_headers,
+#    qti_ipa_kernel_headers, smmu_proxy_uapi_header) -> soong "already defined"
+#  - Motorola's motorola/drivers/*/Android.mk include
+#    motorola/kernel/modules/AndroidKernelModule.mk, a path from Motorola's own
+#    Android tree layout that does not exist here -> kati hard error
+# Same mechanism vendor/lineage/config/common.mk:5 uses for kernel/platform.
+PRODUCT_SOURCE_ROOT_DIRS += -kernel/motorola/sm8635-modules
+
 PRODUCT_SOONG_NAMESPACES += $(COMMON_PATH)
 
 # These directories declare their own Soong namespaces, so their modules are
