@@ -439,6 +439,16 @@ TARGET_COPY_OUT_SYSTEM_DLKM := system_dlkm
 # cnss_register_driver_async_data_cb that Motorola's platform lacks. Taking the
 # subtree wholesale is the only coherent option; a hybrid fails at modpost.
 # Motorola's copy is kept beside it as wlan.motorola-unbuildable/.
+# The one Motorola patch that DOES matter is ported back on top:
+# hdd_update_mac_config reading the per-unit factory MAC from the bootloader's
+# wifimacaddr= cmdline arg (patches/wlan/qcacld-bootarg-mac.patch in the
+# workspace). Without it the driver falls back to the board-data placeholder
+# 00:03:7F:12:34:56 -- identical on every unit, so two arcfox phones on one L2
+# segment would collide. An earlier revision of this comment claimed the loss
+# was "MAC randomized per boot, rather than derived from the serial": both
+# halves were wrong. Stock never derived it from the serial (that path is dead
+# code with a 38:80:DF OUI that does not match this device), and the fallback
+# is fixed, not random.
 #   moto_swap.ko         - kernel-side hybridswap memcg fields were never
 #                          published; stock parity impossible from source.
 BOARD_VENDOR_KERNEL_MODULES_LOAD := $(strip $(shell cat $(COMMON_PATH)/modules/modules.list.vendor_dlkm 2>/dev/null))
