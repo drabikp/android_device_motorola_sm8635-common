@@ -1,0 +1,111 @@
+# NOTE (measured 2026-08-31): this was originally gated on a *persist.*
+# property set from vendor.prop. That can never fire on this device: 7 of the 8
+# persist.* properties declared in the built /vendor/build.prop are unset at
+# runtime (checked with getprop), because persist.* values are sourced from
+# persistent storage, not from build.prop. ro.vendor.* does load, and shell
+# cannot set a vendor property anyway (property.te neverallow blocks
+# coredomain), so nothing is lost by making it read-only.
+# Arm the touch controller's double-tap wake gesture.
+#
+# ---------------------------------------------------------------------------
+# THE NODE CONTRACT (read from the driver, not guessed)
+# ---------------------------------------------------------------------------
+# touchscreen_mmi_class.c gesture_store() parses the buffer with
+#   sscanf(buf, "%d", &value)
+# -- format "%d", which in the kernel's vsscanf() is fixed base 10 (base is only
+# auto-detected for "%i"). So the value written must be the DECIMAL spelling of
+# the command byte. Writing "0x31" parses as 0 and falls into the default case
+# ("unsupport gesture mode type"). The accepted commands are:
+#
+#   16 (0x10)  zero  tap disable    gesture_mode_type &= ~0x01
+#   17 (0x11)  zero  tap enable     gesture_mode_type |=  0x01
+#   32 (0x20)  single tap disable   gesture_mode_type &= ~0x02
+#   33 (0x21)  single tap enable    gesture_mode_type |=  0x02
+#   48 (0x30)  DOUBLE tap disable   gesture_mode_type &= ~0x04
+#   49 (0x31)  DOUBLE tap enable    gesture_mode_type |=  0x04
+#
+# READING the node does NOT return that state. gesture_show() prints
+# pdata.supported_gesture_type as "%02x" -- the static CAPABILITY bitmask taken
+# from the devicetree. arcfox declares mmi,supported_gesture_type = <0x06> on
+# goodix-berlin@0, gdx-cli@0 and focaltech@1, which decodes as
+#   0x02 TS_MMI_GESTURE_SINGLE | 0x04 TS_MMI_GESTURE_DOUBLE
+# (0x01 zero-tap and 0x08 palm are NOT supported here). So `cat gesture` always
+# prints "06" no matter what has been written. Do not use it to check state.
+#
+# Verified against stock: /vendor/bin/hw/com.motorola.hardware.display.touch-service
+# does exactly this. Disassembly of its setGesture() shows
+#   WriteStringToFile(std::to_string(value), "/sys/class/touchscreen/primary/gesture")
+# i.e. the decimal spelling, and its isGestureSupported() reads the node with
+# strtoll(base 0) and masks the result against the requested bit.
+#
+# ---------------------------------------------------------------------------
+# WHAT THE WRITE ACTUALLY DOES
+# ---------------------------------------------------------------------------
+# Nothing immediately -- it only sets touch_cdev->gesture_mode_type. The effect
+# lands at the NEXT screen-off: ts_mmi_panel_off() (touchscreen_mmi_notif.c:56)
+# takes the TS_MMI_PM_GESTURE branch instead of TS_MMI_PM_DEEPSLEEP when
+# gesture_mode_type != 0, which makes the vendor driver
+#   - build the IC gesture command with the double-tap bit
+#     (goodix_berlin_mmi bit 7 set; goodix_gt96x_mmi bit 7 cleared from 0xFFFF),
+#   - keep the touch IRQ enabled and call enable_irq_wake() on it.
+# On the next double tap the driver reports BTN_TRIGGER_HAPPY6 (709) on the
+# "double-tap" / "s-double-tap" input devices; the keylayouts of those names
+# turn 709 into KEYCODE_WAKEUP, which is what wakes the display.
+#
+# The precondition (pdata.gestures_enabled / cli_gestures_enabled) is already
+# satisfied -- the DT carries mmi,enable-gestures on the main panel and
+# mmi,cli-enable-gestures on both cover panels, and both input devices are
+# present on the running device.
+#
+# ---------------------------------------------------------------------------
+# WHY init AND NOT A HAL
+# ---------------------------------------------------------------------------
+# There is no client. Stock drives this node from Motorola's touch HAL, which is
+# in turn driven by closed Moto system apps this ROM does not ship, so merely
+# giving that HAL an SELinux domain would start a server nobody calls. The one
+# framework client that exists on LineageOS is PowerManagerService's
+# IPower.setMode(DOUBLE_TAP_TO_WAKE), and the power HAL on this device is a
+# Motorola PREBUILT that ignores that mode -- see the notes in common.mk.
+#
+# ---------------------------------------------------------------------------
+# WHY THE TRIGGER IS COMPOUND
+# ---------------------------------------------------------------------------
+# The write must not run before the touch drivers have probed, or it silently
+# targets a path that does not exist yet and the gesture is never armed.
+# sys.boot_completed is comfortably after probe (touch works on the lock screen).
+# ro.vendor.arcfox.dt2w defaults to 1 from vendor.prop and is loaded from
+# the persistent store during init, i.e. possibly LONG before boot_completed --
+# hence a compound trigger rather than two separate ones. init re-evaluates the
+# action whenever EITHER property changes, so if something later sets the
+# property the matching branch fires immediately.
+#
+# NOTE: that "something" CANNOT be `adb shell setprop`. A coredomain is
+# neverallowed from setting any vendor property (system/sepolicy/private/
+# property.te:488) and shell is a coredomain, so the disable branch is reachable
+# only by rebuilding vendor.prop, editing /data/property/persistent_properties,
+# or a root shell. See sepolicy/vendor/property.te for the full reasoning and
+# for why the property is nevertheless shell-READABLE.
+#
+# No new SELinux rule is needed for the write itself: these vendor rc commands
+# run in vendor_init, and AOSP already grants
+#   allow vendor_init { sysfs_type -sysfs_usermodehelper }:file rw_file_perms;
+# (system/sepolicy/private/vendor_init.te:235). The gesture attribute is plain
+# u:object_r:sysfs:s0 -- measured on this device, and it is plain sysfs on stock
+# too: stock's genfscon entries for sysfs_touchclass cover /class/touchscreen and
+# /devices/virtual/touchscreen, and NEITHER matches the attribute files, which
+# SELinux labels by their real kernfs path under
+# /devices/platform/soc/.../spi0.0/touchscreen/primary/. No genfscon is added
+# here on purpose.
+#
+# Both panels are armed. "primary" is the inner display (goodix-berlin, spi0.0),
+# "secondary" is the cover display (goodix,marseille via goodix_gt96x_mmi, or
+# focaltech on other panel suppliers, spi1.0). On a flip the cover panel is the
+# one the user actually taps with the phone shut.
+
+on property:sys.boot_completed=1 && property:ro.vendor.arcfox.dt2w=1
+    write /sys/class/touchscreen/primary/gesture 49
+    write /sys/class/touchscreen/secondary/gesture 49
+
+on property:sys.boot_completed=1 && property:ro.vendor.arcfox.dt2w=0
+    write /sys/class/touchscreen/primary/gesture 48
+    write /sys/class/touchscreen/secondary/gesture 48

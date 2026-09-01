@@ -113,6 +113,19 @@ prebuilt_etc {
     vendor: true,
 }
 
+// Arms the touch controller's double-tap wake gesture by writing the Motorola
+// touchscreen class node. Nothing on this ROM wrote it -- stock does it from a
+// closed Moto HAL whose client apps we do not ship, and the LineageOS client
+// (PowerManagerService -> IPower.setMode(DOUBLE_TAP_TO_WAKE)) lands in a
+// Motorola power-HAL PREBUILT that ignores the mode. The file documents the
+// decimal-only node contract and why the trigger is compound.
+prebuilt_etc {
+    name: "init.arcfox-touch-gesture.rc",
+    src: "init/init.arcfox-touch-gesture.rc",
+    sub_dir: "init",
+    vendor: true,
+}
+
 
 // Face unlock VINTF declaration, replacing the hand-edited blob. See the file
 // for why version 3 and not the 4 the vendor tree had been carrying.

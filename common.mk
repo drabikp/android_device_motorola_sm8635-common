@@ -347,6 +347,57 @@ PRODUCT_PACKAGES += \
     init.arcfox-usb.rc
 
 
+# ---------------------------------------------------------------------------
+# DOUBLE-TAP-TO-WAKE
+# ---------------------------------------------------------------------------
+# Three pieces, all of which were missing; the feature needs all three and none
+# of them works alone.
+#
+# 1. The kernel side (already done elsewhere): touchscreen_mmi and
+#    goodix_berlin_mmi are built with CONFIG_BOARD_USES_DOUBLE_TAP_CTRL, which
+#    is what creates /sys/class/touchscreen/<panel>/gesture. The cover-panel
+#    driver goodix_gt96x_mmi needs no such flag -- its gesture setup is
+#    unconditional.
+#
+# 2. init.arcfox-touch-gesture.rc writes the node. See the file for the node
+#    contract (decimal 49 enable / 48 disable, and why `cat` of the node returns
+#    the DT capability mask "06" rather than the state).
+#
+# 3. The keylayouts below turn the kernel's gesture key into a wake.
+#    touchscreen_mmi reports a double tap as BTN_TRIGGER_HAPPY6 (scan code 709)
+#    on two dedicated input devices named "double-tap" (inner panel) and
+#    "s-double-tap" (cover panel) -- NOT on the touchscreen device. With no
+#    keylayout for those names, EventHub falls back to Generic.kl, which has no
+#    entry for 709, so the event was being dropped and the screen never woke.
+#    Mapping 709 to WAKEUP is sufficient by itself: PhoneWindowManager treats
+#    KEYCODE_WAKEUP as a wake key with no config flag and no power-HAL
+#    involvement (PhoneWindowManager.java:5444 and :5626).
+#    Stock ships no equivalent -- Motorola consumes the gesture through its own
+#    sensor/HAL stack instead. The filenames must match the input device names.
+#
+# NOT TAKEN: the AOSP route (config_supportDoubleTapWake + the Settings "Tap to
+# wake" toggle). That toggle's only transport is IPower.setMode(
+# DOUBLE_TAP_TO_WAKE), and our power HAL is Motorola's PREBUILT
+# /vendor/bin/hw/android.hardware.power-service, which logs the mode and drops
+# it. The in-tree QTI source HAL (vendor/qcom/opensource/power) does implement
+# the mode behind -DTAP_TO_WAKE_NODE, but it writes "1"/"0" -- values this
+# driver's gesture_store() rejects outright -- and adopting it means replacing a
+# boot-critical HAL. Enabling config_supportDoubleTapWake without that work
+# would put a switch in Settings that does nothing.
+#
+# NOT TAKEN: vendor.lineage.touch ITouchscreenGesture. That interface backs
+# LineageParts' "Touchscreen gestures" screen, whose action list
+# (TouchscreenGestureConstants.java) has no "wake the screen" action at all --
+# only camera/flashlight/browser/dialer/email/messages/media/volume/ambient.
+# It cannot express double-tap-to-wake.
+PRODUCT_PACKAGES += \
+    init.arcfox-touch-gesture.rc
+
+PRODUCT_COPY_FILES += \
+    $(COMMON_PATH)/keylayout/double-tap.kl:$(TARGET_COPY_OUT_VENDOR)/usr/keylayout/double-tap.kl \
+    $(COMMON_PATH)/keylayout/s-double-tap.kl:$(TARGET_COPY_OUT_VENDOR)/usr/keylayout/s-double-tap.kl
+
+
 # WiFi. The HAL binary and all its dependencies are already shipped and the
 # qca_cld3_kiwi_v2 driver is loaded, but nothing started the service. This rc
 # does. Both landed and IWifi/default now registers.

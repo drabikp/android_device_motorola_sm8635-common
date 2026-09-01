@@ -1,0 +1,27 @@
+# Key layout for the COVER (outer) panel's gesture input device.
+#
+# Same mechanism as double-tap.kl -- read that file first; only the differences
+# are repeated here.
+#
+# touchscreen_mmi registers this second gesture device for panels whose DT node
+# carries `mmi,cli-enable-gestures` (on arcfox: gdx-cli@0 and focaltech@1, both
+# mmi,class-entry-name = "secondary"):
+#   touchscreen_mmi_gesture.c:ts_mmi_cli_gesture_init()
+#       sensor_input_dev->name = "s-double-tap"
+# and reports through ts_mmi_cli_gesture_handler() (same evcode -> keycode table
+# as the main panel). Confirmed present on this unit: `getevent -pl` lists
+# "s-double-tap" alongside the cover touchscreen "gdx_cli_0".
+#
+# The filename must stay "s-double-tap.kl" -- EventHub looks it up by the
+# device's canonical name and getCanonicalName() preserves '-'.
+#
+# ON A FLIP THIS IS THE ONE THAT MATTERS. The cover panel is what the user taps
+# with the phone closed, so if only one of the two layouts ships, ship this one.
+#
+#   706  BTN_TRIGGER_HAPPY3  single tap
+#   707  BTN_TRIGGER_HAPPY4  zero tap / FOD down
+#   708  BTN_TRIGGER_HAPPY5  zero tap up
+#   709  BTN_TRIGGER_HAPPY6  DOUBLE TAP
+#
+# Only 709 is mapped, for the same two reasons given in double-tap.kl.
+key 709   WAKEUP

@@ -677,3 +677,27 @@ ro.vendor.build.vendorprefix=/vendor
 # in kmsg with: GZFSG opened final path /vendor/fsg/arcfoxpvt1_dsds_row.img.gz
 #
 # Do not reinstate this without re-checking that image name against the device.
+
+
+# Double-tap-to-wake, on by default.
+#
+# Read by init.arcfox-touch-gesture.rc, which writes decimal 49 (enable) or 48
+# (disable) to /sys/class/touchscreen/{primary,secondary}/gesture once
+# sys.boot_completed is set. See that file for the node contract and
+# sepolicy/vendor/property.te for why the property has a type of its own.
+#
+# A build.prop default plus a persistent override is the normal init ordering:
+# property_load_boot_defaults() applies this value early, then
+# load_persist_props() replaces it with whatever /data/property holds.
+#
+# It cannot be flipped with `adb shell setprop`: a coredomain is neverallowed
+# from setting any vendor property (system/sepolicy/private/property.te:488),
+# and that is enforced at BUILD time, not runtime -- the first draft of this
+# change failed the sepolicy neverallow check on exactly that rule. Changing the
+# value means this file, /data/property/persistent_properties, or a root shell.
+#
+# Cost of leaving it on: at screen-off the touch controller enters gesture mode
+# (TS_MMI_PM_GESTURE) instead of deep sleep and its IRQ is left armed as a
+# wake source, rather than the panel being powered down. Turn it off with the
+# property if standby drain matters more than the gesture.
+ro.vendor.arcfox.dt2w=1

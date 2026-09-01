@@ -1,0 +1,43 @@
+# Key layout for the MAIN (inner) panel's gesture input device.
+#
+# touchscreen_mmi registers a second input device per panel, separate from the
+# touchscreen itself, purely to report wake gestures:
+#   touchscreen_mmi_gesture.c:600  sensor_input_dev->name = "double-tap"
+# EventHub finds this file by the device's canonical name, so the FILENAME MUST
+# STAY "double-tap.kl" -- InputDeviceIdentifier::getCanonicalName() keeps '-'
+# and '_' verbatim (frameworks/native/libs/input/InputDevice.cpp:52).
+#
+# The device carries EV_KEY with BTN_TRIGGER_HAPPY3..6 and EV_ABS with ABS_X/
+# ABS_Y but NOT BTN_TOUCH and NOT ABS_MT_*, so EventHub classifies it
+# KEYBOARD (not TOUCH, not JOYSTICK -- BTN_TRIGGER_HAPPY is outside the
+# BTN_MISC..BTN_MOUSE and BTN_JOYSTICK..BTN_DIGI gamepad ranges). A keyboard
+# class device with no alphabetic keys does not change config.keyboard and does
+# not suppress the IME.
+#
+# Scan codes, from touchscreen_mmi_gesture.c:225-250 and
+# kernel/motorola/sm8635/include/uapi/linux/input-event-codes.h:763:
+#   706  BTN_TRIGGER_HAPPY3  evcode 1  single tap   (reports ABS_X/ABS_Y)
+#   707  BTN_TRIGGER_HAPPY4  evcode 2  zero tap / FOD down
+#   708  BTN_TRIGGER_HAPPY5  evcode 3  zero tap up
+#   709  BTN_TRIGGER_HAPPY6  evcode 4  DOUBLE TAP   (reports ABS_X/ABS_Y)
+#
+# WAKEUP is what actually turns the screen on. PhoneWindowManager treats
+# KEYCODE_WAKEUP as a wake key unconditionally -- it clears ACTION_PASS_TO_USER
+# and sets isWakeKey (PhoneWindowManager.java:5444-5450), then calls
+# wakeUpFromWakeKey() at :5626-5628. No config flag and no power-HAL mode is
+# involved on this path.
+#
+# ONLY 709 IS MAPPED. The other three are deliberately left unmapped:
+#   - the DT only advertises single+double (mmi,supported_gesture_type = <0x06>,
+#     i.e. TS_MMI_GESTURE_SINGLE|TS_MMI_GESTURE_DOUBLE), so zero tap can never
+#     fire here;
+#   - single tap is armed by a different value (33, not 49) which nothing on
+#     this ROM writes, and mapping it to WAKEUP as well would make a single
+#     stray touch on a pocketed phone wake the display.
+# Unmapped scan codes are dropped by KeyLayoutMap with a debug log, not an error.
+#
+# Stock ships NO keylayout for this device -- Motorola's stack consumes the
+# gesture through its own sensor/HAL path (SENSOR_TYPE_MOTO_DOUBLE_TAP,
+# sensors_classdev "dt-gesture") plus closed-source Moto apps that LineageOS
+# does not have. This file is the LineageOS-native replacement for that half.
+key 709   WAKEUP
