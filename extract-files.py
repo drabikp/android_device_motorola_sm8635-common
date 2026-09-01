@@ -80,18 +80,31 @@ blob_fixups: blob_fixups_user_type = {
     # libqdcm-mode-parser ... -- already link it by that name. Only this handful
     # link the bare "libtinyxml2.so".
     #
-    # On stock, /vendor/lib64/libtinyxml2.so does not exist as a regular file --
-    # it is a SYMLINK to libtinyxml2_1.so, and extract_utils drops symlinks (the
-    # same trap as media_profiles_vendor.xml). So these blobs resolved to the
-    # 10.x copy on stock, and to the platform's 11.x libtinyxml2.vendor on ours.
+    # ⚠️ CORRECTED 2026-09-01. This block used to claim that on stock
+    # /vendor/lib64/libtinyxml2.so is a SYMLINK to libtinyxml2_1.so which
+    # extract_utils drops. That is FALSE and was measured false: there is no
+    # libtinyxml2 symlink anywhere in the W1UXS36H dump, stock's vendor/lib64 has
+    # no libtinyxml2.so at all, and symlinks ARE preserved by the extractor (283
+    # of them under vendor/, three in vendor/lib64 alone -- libEGL_adreno,
+    # libGLESv2_adreno, libq3dtools_adreno). The rewrite below is still correct
+    # for THESE blobs, but on the evidence that they are 10.x consumers, not on a
+    # symlink that does not exist.
     #
     # Do NOT "fix" this by shipping stock's system/lib64/libtinyxml2.so: stock is
-    # Android 16 and that copy is ALSO 11.x (230 symbols, same count as ours).
+    # Android 16 and that copy is ALSO 11.x (230 tinyxml2 symbols, same as ours;
+    # the 10.x _1 copy exports 198).
     # It was tried and would have been a no-op. Repointing DT_NEEDED at
     # libtinyxml2_1.so is the fix, and needs no new file.
     (
         'vendor/bin/qvrdatauploader',
-        'vendor/bin/hw/motorola.hardware.sensorext-service',
+        # ⚠️ motorola.hardware.sensorext-service is DELIBERATELY NOT HERE.
+        # It used to be, and it is an 11.x consumer -- repointing it at the 10.x
+        # libtinyxml2_1.so made it SIGABRT in SensorExt::initAlsComp on a
+        # cross-DSO CFI check. See the long note in
+        # device/motorola/arcfox/extract-files.py for the 0x68-vs-0x70
+        # _rootAttribute test that decides which tinyxml2 a blob actually wants.
+        # Do not re-add it here: this list and that note would then contradict
+        # each other, and whichever proprietary-files.txt names the blob wins.
         'vendor/bin/hw/vendor.qti.hardware.display.composer-service',
         'vendor/lib64/libaodoptfeature.so',
         'vendor/lib64/libapengine.so',
