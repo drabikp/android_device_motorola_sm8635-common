@@ -1,0 +1,27 @@
+# The boot-control HAL stats every entry under /dev/block/by-name while it
+# builds its slot-partition inventory, and three partitions on this device have
+# no label:
+#
+#   avc: denied { getattr } for comm="android.hardwar" path="/dev/block/sdd10"
+#   avc: denied { getattr } for comm="android.hardwar" path="/dev/block/sdd7"
+#   avc: denied { getattr } for comm="android.hardwar" path="/dev/block/sdd22"
+#        scontext=u:r:hal_bootctl_default:s0 tcontext=u:object_r:block_device:s0
+#        tclass=blk_file
+#
+# Resolved on the live device: sdd7 = storsec_a, sdd10 = prov_a,
+# sdd22 = logo_a. Stock gives all three vendor_custom_ab_block_device
+# (vendor_file_contexts:911, :912, :933), which is a QCOM type this tree already
+# has (sepolicy_vndr/legacy-um/generic/vendor/common/device.te:34).
+#
+# THE LABEL ALONE IS NOT ENOUGH HERE. Relabelling moves the denial rather than
+# removing it, because nothing grants hal_bootctl_default getattr on the new
+# type either -- so both halves are done together.
+#
+# getattr and nothing else: the HAL only needs to know the nodes exist and how
+# big they are. It never opens them, and private/domain.te's block-device
+# neverallows are written against { open read write }, not getattr.
+#
+# COSMETIC: `bootctl` works (the device boots, slots switch), because the
+# partition it actually needs -- misc -- is labelled misc_block_device already.
+allow hal_bootctl_default block_device:blk_file getattr;
+allow hal_bootctl_default vendor_custom_ab_block_device:blk_file getattr;

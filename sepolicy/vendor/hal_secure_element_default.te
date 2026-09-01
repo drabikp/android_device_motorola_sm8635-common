@@ -1,0 +1,38 @@
+# The eSE (embedded secure element) HAL. Four denials in a clean boot, all at
+# HAL start, and the three property ones are FUNCTIONAL -- the HAL cannot
+# publish its own state.
+#
+#   avc: denied { set } for property=vendor.ese.status         uid=1000 gid=1027
+#   avc: denied { set } for property=vendor.ese.nfc.disable
+#   avc: denied { set } for property=persist.vendor.ese.mute
+#        scontext=u:r:hal_secure_element_default:s0
+#        tcontext=u:object_r:vendor_default_prop:s0 tclass=property_service
+#
+# vendor.ese.nfc.disable is the interlock the NFC stack reads to know when the
+# eSE has taken the contactless frontend, so losing the write is not cosmetic.
+# The prefix now has a type of its own (property.te / property_contexts) because
+# domain.te:841 neverallows any domain but init/vendor_init from writing
+# vendor_default_prop -- the same trap documented throughout property.te.
+set_prop(hal_secure_element_default, vendor_mot_secure_element_prop)
+
+# /mnt/vendor/persist -- the HAL walks down to its persistent key material.
+#
+#   avc: denied { search } for comm="android.hardwar" name="vendor" dev="tmpfs"
+#        scontext=u:r:hal_secure_element_default:s0
+#        tcontext=u:object_r:mnt_vendor_file:s0 tclass=dir
+#
+# Search plus the symlink read is the walk itself, the same minimal pair
+# batt_health holds; no file access is granted, because none was denied and
+# nothing here has established which file it wants.
+allow hal_secure_element_default mnt_vendor_file:dir search;
+allow hal_secure_element_default mnt_vendor_file:lnk_file read;
+
+# NOT FIXABLE: the HAL also reads an init.svc.* status property that is not in
+# the init.svc.vendor. namespace --
+#   avc: denied { read } for name="u:object_r:init_service_status_private_prop:s0"
+#        tcontext=u:object_r:init_service_status_private_prop:s0
+# init_service_status_private_prop is system_internal_prop
+# (private/property.te:34), so a vendor domain can never be granted it. The name
+# is not recoverable from the AVC (the denial is on the property area, not the
+# property). One denial per boot; it degrades to "service not running", which is
+# the same answer the HAL would get for a service it cannot see.

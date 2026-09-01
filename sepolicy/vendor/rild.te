@@ -48,3 +48,69 @@ allow vendor_rmt_storage vendor_modem_block_device:blk_file rw_file_perms;
 # persist.vendor.radio and vendor.radio prefixes), so granting the radio daemon
 # `set` on it is the narrow, in-domain answer.
 set_prop(rild, vendor_radio_prop)
+
+
+# ===========================================================================
+# ROUND TWO -- five measured denials from a clean 75 s boot capture.
+# ===========================================================================
+
+# /proc/bootinfo, read by rild's qmi_motext_hook thread (the Motorola QMI
+# extension). It now carries its own type; see file.te for why that was
+# preferred over giving rild blanket `proc:file read` for one file.
+#
+#   avc: denied { read } for comm="qmi_motext_hook" name="bootinfo" dev="proc"
+#        scontext=u:r:rild:s0 tcontext=u:object_r:proc:s0 tclass=file
+allow rild proc_bootinfo:file r_file_perms;
+
+# /dev/input -- rild enumerates the input devices (the Motorola SAR/antenna
+# tuning path correlates them with the grip sensor).
+#
+#   avc: denied { read } for comm="rild" name="input" dev="tmpfs"
+#        scontext=u:r:rild:s0 tcontext=u:object_r:input_device:s0 tclass=dir
+allow rild input_device:dir r_dir_perms;
+
+# android.frameworks.sensorservice.ISensorManager -- rild subscribes to the
+# framework sensor service for the same SAR reason capsense_reset does.
+#
+#   avc: denied { find } for pid=2660 uid=1001
+#        name=android.frameworks.sensorservice.ISensorManager/default
+#        scontext=u:r:rild:s0 tcontext=u:object_r:fwk_sensor_service:s0
+#
+# Same pattern and same justification as capsense_reset.te: a vendor domain
+# finding a framework service, which several hal_* domains in
+# system/sepolicy/vendor already do, so no Treble neverallow is in the way. The
+# binder_call pair is what actually carries the transaction and the callbacks.
+binder_call(rild, system_server)
+binder_call(system_server, rild)
+allow rild fwk_sensor_service:service_manager find;
+
+# /proc/asound -- rild walks the ALSA card list (voice-call sound-card lookup).
+#
+#   avc: denied { search } for comm="rild" name="asound" dev="proc"
+#        scontext=u:r:rild:s0 tcontext=u:object_r:proc_asound:s0 tclass=dir
+allow rild proc_asound:dir search;
+allow rild proc_asound:file r_file_perms;
+
+# wifi.interface (and siblings) -- rild reads the wifi HAL's interface name for
+# the tethering/AP-assist path.
+#
+#   avc: denied { read } for comm="rild" name="u:object_r:wifi_hal_prop:s0"
+#        scontext=u:r:rild:s0 tcontext=u:object_r:wifi_hal_prop:s0 tclass=file
+#
+# wifi_hal_prop is system_public_prop (public/property.te:266), so a vendor
+# domain may be granted the read; it is only the default that excludes it.
+get_prop(rild, wifi_hal_prop)
+
+# /data/vendor/misc/cutback -- the Motorola RF power-cutback state directory,
+# which rild creates. Stock type and path: vendor_file_contexts:740.
+#
+#   avc: denied { write } for comm="rild" name="cutback" dev="dm-43"
+#        scontext=u:r:rild:s0 tcontext=u:object_r:vendor_data_file:s0 tclass=dir
+#
+# The write is on the parent, i.e. the mkdir. As with the fingerprint HAL's
+# .fps directory, the type_transition is what makes the directory come out with
+# the right label when rild creates it rather than only after a restorecon.
+allow rild vendor_data_file:dir { search write add_name };
+type_transition rild vendor_data_file:dir cutback_data_file "cutback";
+allow rild cutback_data_file:dir create_dir_perms;
+allow rild cutback_data_file:file create_file_perms;

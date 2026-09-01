@@ -78,3 +78,94 @@ vendor.camera.led.torchmode     u:object_r:vendor_camera_ledtorchmode_prop:s0
 # vendor.ril.gsm.version.baseband / vendor.ril.svdo / vendor.ril.svlte1x named
 # in qcrilNrd and libqcrilNr.so.
 vendor.ril.                     u:object_r:vendor_radio_prop:s0
+
+# ro.vendor.arcfox.dt2w -- the double-tap-to-wake switch read by
+# init.arcfox-touch-gesture.rc. It gets a type of its own so that shell can READ
+# it (`adb shell getprop`), which the vendor_default_prop fallthrough would not
+# allow: property.te:189 neverallows a coredomain from reading any vendor
+# property that is not vendor_public_property_type.
+#
+# It is NOT shell-writable and cannot be made so -- see property.te for the
+# neverallow that rules it out.
+#
+# Deliberately NOT folded into the existing persist.vendor.touch. prefix
+# (vendor_mot_touchscreen_prop): that type is stock's, is written by
+# /vendor/bin/init.mmi.touch.sh, and this switch has nothing to do with the
+# touch firmware calibration properties that live there.
+# ro.vendor.arcfox.dt2w deliberately has NO custom context: measured on device,
+# vendor props carrying a custom type were silently DROPPED at boot (vendor_init
+# has no set permission for it), while ro.vendor.* props with no explicit context
+# (e.g. ro.vendor.beluga.*) load fine and are still readable by shell.
+
+# ---------------------------------------------------------------------------
+# ROUND TWO -- see property.te for the measurement behind each of these.
+# ---------------------------------------------------------------------------
+
+# ro.sys.battery.FirstUsageDate and ro.rkp.csr_uploaded ARE NOT HERE, AND CANNOT
+# BE. The build enforces the vendor property namespace:
+#
+#   check_prop_prefix --strict ... 2 violations found:
+#     ro.sys.battery.FirstUsageDate   u:object_r:vendor_mot_battinfo_prop:s0
+#     ro.rkp.csr_uploaded             u:object_r:vendor_mot_init_prop:s0
+#   vendor's and odm's property_contexts MUST use ONLY vendor-prefixed
+#   properties.  (allowed: ro.vendor. ro.odm. ro.boot. ro.hardware. vendor.
+#   odm. persist.vendor. persist.odm. ctl.vendor. init.svc.vendor. ...)
+#
+# Both are labelled exported_default_prop in
+# ../system_ext/private/property_contexts instead. See that file for why no new
+# type is declared.
+
+# Set by /vendor/bin/init.oem.hw.sh from the esimid UTAG. It is NOT covered by
+# the ro.vendor.hw. prefix above -- the script writes BOTH ro.vendor.hw.esimid
+# (which lands on vendor_mot_hw_prop and works) and the bare ro.vendor.esimid
+# (which fell through to default_prop and was refused):
+#
+#   init: Unable to set property 'ro.vendor.esimid' from uid:0 gid:0 pid:1196:
+#         SELinux permission check failed
+#   init.oem.hw.sh: ro.vendor.esimid='8903302355342901...'
+#
+# init_hw already holds set_prop on vendor_mot_init_prop (init_hw.te:131), so
+# this one line is the whole fix. Type is stock's (vendor_property_contexts:444).
+#
+# VERIFIED WORKING AFTER FLASHING -- AND `adb shell getprop ro.vendor.esimid`
+# PRINTS NOTHING ANYWAY. Do not read that as the fix having failed; it was
+# reported as such once already.
+#
+# What the post-flash capture shows: the "Unable to set property
+# 'ro.vendor.esimid' ... SELinux permission check failed" line is GONE and there
+# is no AVC for it. What `getprop` shows is a SHELL READ failure, caught live:
+#
+#   $ adb shell getprop ro.vendor.esimid          -> (empty)
+#   $ adb shell getprop ro.vendor.hw.esimid       -> 8903302355342901...
+#   avc: denied { read } for name="u:object_r:vendor_mot_init_prop:s0"
+#        scontext=u:r:shell:s0 tcontext=u:object_r:vendor_mot_init_prop:s0
+#        tclass=file
+#
+# Both properties are written by the same script, from the same UTAG, in the
+# same run; the only difference is the type. property.te grants shell read on
+# vendor_mot_hw_prop and NOT on vendor_mot_init_prop, and getprop prints an
+# empty string for a property it cannot read rather than an error. All six
+# vendor_mot_init_prop properties (esimid, bootreason, boot_seq,
+# manufacturedate, mot.iccid, mot.cust_md5) read empty from shell for this
+# reason.
+#
+# NOT WIDENED TO shell, on purpose. Stock's readers of vendor_mot_init_prop are
+# apanic, charge_only, init_display, init_hw, init_usb, mmi_attest_chk,
+# mmi_boot, surfaceflinger, tcmd, vendor_init and vendor_thermal-engine -- shell
+# is not among them, and the value is an eSIM ICCID. Our policy already matches
+# stock (all the vendor domains via `{ domain -coredomain -appdomain }`, plus
+# surfaceflinger and dumpstate). Verify it from dumpstate/a bugreport, or by
+# reading its twin ro.vendor.hw.esimid; nothing in this ROM consumes the bare
+# name (grepped the whole built image: the only hit is this file).
+ro.vendor.esimid                u:object_r:vendor_mot_init_prop:s0
+
+# The eSE control namespace, set by the secure-element HAL. Stock:
+# vendor_property_contexts:698-699. See property.te.
+vendor.ese.                     u:object_r:vendor_mot_secure_element_prop:s0
+persist.vendor.ese.             u:object_r:vendor_mot_secure_element_prop:s0
+
+# The factory-image marker read by thermal-engine-v2, rmt_storage, tcmdhelp and
+# two vendor libs, and used as an `on property:` trigger in four vendor rc
+# files. It had no context entry and was landing on default_prop, which no
+# vendor domain can read. Stock: vendor_property_contexts:431. See property.te.
+ro.vendor.build.motfactory      u:object_r:vendor_mot_public_default_prop:s0

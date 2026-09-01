@@ -1,0 +1,145 @@
+# QCOM's thermal-engine. Twelve denials in a clean boot, spread over five
+# different objects. All of them are read/stat of monitoring inputs, so the
+# failure mode is a thermal governor running with fewer sensors than it thinks
+# it has -- degraded rather than dead, but not cosmetic.
+
+# 1) Generic sysfs, getattr only (the daemon stats each configured sensor path
+#    at startup and drops the ones it cannot see). Paths are in the AVCs, which
+#    is unusual and useful here:
+#
+#      /sys/kernel/dsp_stats/{adsp,cdsp}/{clk_stats,hvx_clk,hvx_util,hmx_util}
+#      /sys/devices/.../drm/card0/card0-DSI-{1,2}/dpms
+#      .../a84000.i2c/i2c-1/1-0052/power_supply/charger/charge_control_limit_max
+#      .../a84000.i2c/i2c-1/1-0064/power_supply/flip_battery/{voltage_now,current_now}
+#
+#    The last three are the same two unlabelable i2c power supplies documented
+#    in hal_health_default.te and genfs_contexts -- the bus renumbers between
+#    boots, so no genfscon can name them. The DSP and DRM ones have no vendor
+#    type in this policy at all.
+allow vendor_thermal-engine sysfs:dir r_dir_perms;
+allow vendor_thermal-engine sysfs:file r_file_perms;
+allow vendor_thermal-engine sysfs:lnk_file r_file_perms;
+
+# 2) /sys/class/power_supply/wireless, which QCOM's sepolicy_vndr does label:
+#
+#      avc: denied { search } for comm="thermal-engine-" name="wireless"
+#           tcontext=u:object_r:vendor_sysfs_usb_supply:s0 tclass=dir
+#
+#    and, once the charger/flip_battery supplies above are reachable, the
+#    battery-supply type for the same reason.
+allow vendor_thermal-engine vendor_sysfs_usb_supply:dir r_dir_perms;
+allow vendor_thermal-engine vendor_sysfs_usb_supply:file r_file_perms;
+allow vendor_thermal-engine vendor_sysfs_usb_supply:lnk_file r_file_perms;
+allow vendor_thermal-engine vendor_sysfs_battery_supply:dir r_dir_perms;
+allow vendor_thermal-engine vendor_sysfs_battery_supply:lnk_file r_file_perms;
+#
+# rw, not r: the te-monitor thread WRITES the wireless-charging input current
+# limit as a mitigation step, and was denied seven times in the post-flash
+# capture --
+#
+#   avc: denied { write } for comm="te-monitor" name="wls_input_current_limit"
+#        dev="sysfs" scontext=u:r:vendor_thermal-engine:s0
+#        tcontext=u:object_r:sysfs:s0 tclass=file
+#
+# That node is now labelled vendor_sysfs_battery_supply by genfs_contexts (stock
+# has a genfscon for exactly this path), and stock grants this domain write on
+# the type:
+#   (allow vendor_thermal-engine vendor_sysfs_battery_supply
+#          (file (ioctl read write getattr lock append map open watch watch_reads)))
+# FUNCTIONAL: without it thermal cannot throttle wireless charging current.
+# usb_supply stays read-only, which is also stock's split.
+allow vendor_thermal-engine vendor_sysfs_battery_supply:file rw_file_perms;
+
+# 3) /proc load inputs. Both are verbatim stock
+#    (vendor_sepolicy.cil: allow vendor_thermal-engine proc_stat_34_0 / 
+#    proc_loadavg_34_0 (file (ioctl read getattr lock map open ...))).
+allow vendor_thermal-engine proc_stat:file r_file_perms;
+allow vendor_thermal-engine proc_loadavg:file r_file_perms;
+
+# ---------------------------------------------------------------------------
+# /proc/sys/kernel/pid_max IS DELIBERATELY *NOT* GRANTED. DO NOT ADD IT BACK.
+#
+# The first version of this file had
+#     allow vendor_thermal-engine proc_pid_max:file r_file_perms;
+# next to the two rules above. It was flashed and measured, and it turned this
+# domain from 20 denials per boot into 750 -- more than the entire rest of the
+# device combined, and enough to push the whole-boot total UP from 699 to 823.
+#
+# WHAT IT UNLOCKS. `strings /vendor/bin/thermal-engine-v2` contains exactly five
+# /proc paths and no others:
+#
+#     /proc/stat   /proc/loadavg   /proc/sys/kernel/pid_max
+#     /proc/%d/cmdline             /proc/%d/comm
+#
+# i.e. pid_max is the LOOP BOUND of a brute-force "find a process by name" scan
+# over the whole PID space. While the pid_max read is refused the loop never
+# runs; grant it and the daemon walks every live PID reading comm and cmdline.
+# Measured breakdown of the resulting 750:
+#
+#     361  { read } file  tcontext=u:r:kernel:s0        (/proc/<pid>/* of kthreads)
+#     352  { sys_ptrace } capability=19  self
+#      ~30 { read } file  tcontext=u:r:{init,vold,su,init_touch,
+#                                      vendor_hal_perf_default,...}:s0
+#
+# 741 of them land inside ONE 60 ms burst at 02:52:51 and never recur, which is
+# what a single startup scan looks like. The sys_ptrace half is the kernel's
+# ptrace_may_access() check inside proc_pid_cmdline_read(); the file half is the
+# SELinux check on /proc/<pid>, which is labelled with the TARGET process's
+# domain.
+#
+# WHY IT CAN NEVER BE GRANTED PROPERLY. system/sepolicy/private/domain.te:1681
+# is an unconditional neverallow --
+#
+#   # Limit ability to ptrace or read sensitive /proc/pid files of processes
+#   # with other UIDs to these allowlisted domains.
+#   neverallow { domain -vold -dumpstate -storaged -system_server
+#                userdebug_or_eng(`-llkd -incidentd -profcollectd
+#                                  -simpleperf_boot') }
+#             self:global_capability_class_set sys_ptrace;
+#
+# -- so `allow vendor_thermal-engine self:capability sys_ptrace` will not build,
+# and a vendor daemon reading every process's cmdline is exactly what that rule
+# exists to prevent. The scan is unfinishable by design.
+#
+# STOCK AGREES, AND THIS IS THE TELL. Stock grants this domain proc_stat and
+# proc_loadavg and NOTHING ELSE under /proc -- there is no proc_pid_max rule, no
+# sys_ptrace rule (its only capabilities are `fsetid sys_boot`) and no dontaudit
+# anywhere for vendor_thermal-engine. The one /proc file stock withholds is
+# precisely the one whose absence keeps the scan from starting.
+#
+# FUNCTIONALLY HARMLESS: the scan is a best-effort process lookup that cannot
+# complete on stock either. Thermal mitigation itself runs over sysfs and QMI
+# (the sensors and the write rules above and below), and the post-flash capture
+# shows the daemon healthy afterwards -- it goes on to do its te-monitor work
+# for the rest of the log.
+#
+# The read is dontaudit'd rather than left audited because we now know exactly
+# what it is and that it must stay refused; AOSP uses the same idiom for the
+# probe crash_dump makes (private/crash_dump.te:38). NOTHING ELSE is silenced --
+# in particular there is deliberately no dontaudit for sys_ptrace or for
+# domain:file, so if any future change ever does unblock this scan it will be as
+# loud as it was this time.
+dontaudit vendor_thermal-engine proc_pid_max:file r_file_perms;
+
+# 4) /dev/mmi_sys_temp -- Motorola's system-temperature node, which was falling
+#    through to u:object_r:device:s0:
+#
+#      avc: denied { read write } for comm="thermal-engine-" name="mmi_sys_temp"
+#           tcontext=u:object_r:device:s0 tclass=chr_file
+#
+#    Stock uses QCOM's thermal_device; that type does not exist on the sm8650
+#    sepolicy_vndr branch this board selects, so device.te declares
+#    vendor_mmi_thermal_device instead and file_contexts applies it.
+#
+# NOT FIXABLE: three reads of a default_prop property per boot.
+# default_prop is system_internal_prop (public/property.te:272) and a vendor
+# domain is neverallowed from reading it. The property name is not in the AVC.
+allow vendor_thermal-engine vendor_mmi_thermal_device:chr_file rw_file_perms;
+
+# ro.mot.build.customerid, now labelled build_prop by
+# ../system_ext/private/property_contexts (stock's own type for it). This and
+# ro.vendor.build.motfactory above are the last two of the ten property names in
+# the binary that were falling through to default_prop -- the source of the
+# three `{ read } default_prop` denials that survived round two. Both are unset
+# on this device, so the read returns NULL either way; only the audit noise goes.
+get_prop(vendor_thermal-engine, build_prop)

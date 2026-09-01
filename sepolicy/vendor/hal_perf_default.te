@@ -1,0 +1,14 @@
+# servicemanager cannot call back into QCOM's perf HAL:
+#
+#   avc: denied { call } for comm="servicemanager"
+#        scontext=u:r:servicemanager:s0 tcontext=u:r:vendor_hal_perf_default:s0
+#        tclass=binder
+#
+# This is servicemanager delivering an IServiceCallback / death notification to
+# a process that registered interest in a service. The HAL already has
+# binder_use() from QCOM's policy, which grants the outbound direction; only the
+# callback direction is missing.
+#
+# COSMETIC in the sense that nothing observable failed, but the HAL silently
+# stops being told when the service it is waiting for appears.
+allow servicemanager vendor_hal_perf_default:binder call;

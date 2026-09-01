@@ -247,3 +247,56 @@
 /mnt/vendor/persist/camera(/.*)?                u:object_r:persist_camera_file:s0
 /data/vendor/misc/imager(/.*)?                  u:object_r:imager_data_file:s0
 /data/vendor/misc/imager/metadata(/.*)?         u:object_r:imager_metadata_file:s0
+
+
+# The FPC fingerprint HAL's state directory. Stock: vendor_file_contexts:637.
+# See hal_fingerprint_default.te; the type_transition there covers the case
+# where the HAL creates it before restorecon runs.
+/data/vendor/\.fps(/.*)?                        u:object_r:fps_data_file:s0
+
+# /dev/mmi_sys_temp -- Motorola's system-temperature character device, opened
+# read/write by thermal-engine and falling through to u:object_r:device:s0:
+#
+#   avc: denied { read write } for comm="thermal-engine-" name="mmi_sys_temp"
+#        scontext=u:r:vendor_thermal-engine:s0 tcontext=u:object_r:device:s0
+#        tclass=chr_file
+#
+# Stock labels it thermal_device (vendor_file_contexts:1191). THAT TYPE IS NOT
+# AVAILABLE HERE: it is declared only in sepolicy_vndr/legacy-um/legacy, and
+# this board resolves to sepolicy_vndr/sm8650 (UM_6_1_FAMILY), which has no such
+# type. Using it fails the build --
+#   libsepol.context_from_record: type thermal_device is not defined
+#   vendor_file_contexts: line 1074 has invalid context u:object_r:thermal_device:s0
+# -- so a type of our own is declared in device.te and granted in
+# vendor_thermal-engine.te. Same access, name local to this tree.
+/dev/mmi_sys_temp                               u:object_r:vendor_mmi_thermal_device:s0
+
+# NO ENTRY FOR /mnt/vendor/persist/audio HERE. QCOM's sepolicy_vndr already has
+# one (sm8650/generic/vendor/common/file_contexts:458, identical to stock's
+# vendor_file_contexts:734) and a second copy is a hard build error:
+#   vendor_file_contexts: Multiple same specifications for
+#   /mnt/vendor/persist/audio(/.*)?
+# The denied file is NOT under that directory -- see hal_audio_default.te.
+
+# rild's RF power-cutback state. Verified present on the live device and
+# currently u:object_r:vendor_data_file:s0, which rild has no write on.
+# Stock: vendor_file_contexts:740. See rild.te.
+/data/vendor/misc/cutback(/.*)?                 u:object_r:cutback_data_file:s0
+
+# storsec / prov / logo. Unlabelled, so the boot-control HAL is denied getattr
+# on all three while it inventories the by-name directory. Types and paths are
+# stock's (vendor_file_contexts:911, :912, :933). See hal_bootctl_default.te.
+/dev/block/platform/soc/1d84000\.ufshc/by-name/storsec_[ab]     u:object_r:vendor_custom_ab_block_device:s0
+/dev/block/platform/soc/1d84000\.ufshc/by-name/prov_[ab]        u:object_r:vendor_custom_ab_block_device:s0
+/dev/block/platform/soc/1d84000\.ufshc/by-name/logo_[ab]        u:object_r:vendor_custom_ab_block_device:s0
+
+# The two Motorola wireless-charging HALs, labelled 2026-09-01 so init can start
+# them (they carried the generic vendor_file and init refused the transition).
+# Both lines are VERBATIM from stock's own
+# vendor/etc/selinux/vendor_file_contexts, escapes intact. Stock also labels
+# @1.0-service and @2.0-service variants of each with the same exec types; those
+# binaries do not exist in this ROM, so the entries for them are not copied --
+# an unmatched file_contexts spec is dead weight, not parity.
+# See hal_motpowershare_default.te / hal_motwlc_default.te.
+/(vendor|system/vendor)/bin/hw/motorola\.hardware\.wireless\.powershare-service   u:object_r:hal_motpowershare_default_exec:s0
+/(vendor|system/vendor)/bin/hw/motorola\.hardware\.wireless\.wlc-service          u:object_r:hal_motwlc_default_exec:s0

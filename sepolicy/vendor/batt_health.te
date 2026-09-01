@@ -109,3 +109,16 @@ get_prop(batt_health, build_prop)
 #   sysfs_batteryinfo         stock's genfscon paths for it name pmi8998/pm8921
 #                             SoCs. The type exists in AOSP but nothing on
 #                             arcfox carries it.
+
+# ro.sys.battery.FirstUsageDate -- the read that produced 14537 of the 15603
+# denials in a 4.9 h capture (93% of the log, ~once a second). NO RULE IS NEEDED
+# HERE. The property is now labelled exported_default_prop in
+# ../system_ext/private/property_contexts, and private/domain.te:522 already
+# gives every domain the read:  get_prop(domain, exported_default_prop).
+#
+# It could not be fixed on this side: default_prop is system_internal_prop
+# (public/property.te:272), which neverallows the read from any non-coredomain,
+# so no allow rule written in this file could ever have worked. See
+# ../system_ext/private/property_contexts for the full derivation, including how
+# the property was identified (it is the only one of the eight strings in
+# /vendor/bin/batt_health that lands on default_prop).

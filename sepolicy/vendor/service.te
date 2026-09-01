@@ -6,3 +6,32 @@
 # hal_sensors_default `find` on it -- the policy will not build).
 type vendor_hal_sensorext_service, service_manager_type;
 type vendor_hal_arcsoftpp_service, service_manager_type;
+
+# The three Motorola fingerprint extension interfaces the FPC HAL publishes
+# alongside AOSP's IFingerprint. See hal_fingerprint_default.te and
+# service_contexts. A type of our own for the same reason as the two above:
+# stock's vendor_hal_fingerprint_fpc_service does not exist in this policy.
+type vendor_hal_motofingerprint_service, service_manager_type;
+
+# motorola.hardware.camera.desktop::ICameraDesktop -- the HIDL interface the
+# camera provider probes for the desktop/DisplayPort camera path. It has no
+# entry in any hwservice_contexts, so the lookup lands on
+# default_android_hwservice, which no vendor domain may find:
+#
+#   avc: denied { find } for interface=motorola.hardware.camera.desktop::ICameraDesktop
+#        sid=u:r:hal_camera_default:s0 scontext=u:r:hal_camera_default:s0
+#        tcontext=u:object_r:default_android_hwservice:s0 tclass=hwservice_manager
+#
+# Nothing in this ROM implements the interface, so the lookup will still return
+# null -- which is the answer the provider already handles. This only replaces
+# a denial with a clean "not registered".
+type vendor_hal_camera_desktop_hwservice, hwservice_manager_type;
+
+# The two Motorola wireless-charging AIDL services. Stock's own type names are
+# hal_motpowershare_aidl_service and hal_motwlc_aidl_service; neither exists in
+# AOSP or in sepolicy_vndr, so as with the four types above they are declared
+# here under a vendor_ prefix that makes their provenance obvious. Unlike
+# ISensorExt there is no neverallow forcing the rename -- it is only for
+# consistency with the rest of this file. See hal_motpowershare_default.te.
+type vendor_hal_motpowershare_service, service_manager_type;
+type vendor_hal_motwlc_service, service_manager_type;

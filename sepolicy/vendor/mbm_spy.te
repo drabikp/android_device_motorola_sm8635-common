@@ -59,3 +59,8 @@ get_prop(mbm_spy, vendor_mot_init_prop)
 get_prop(mbm_spy, vendor_radio_prop)
 get_prop(mbm_spy, build_prop)
 get_prop(mbm_spy, bootloader_prop)
+
+# /proc/bootinfo now carries its own type (see file.te). This domain reached it
+# through its broad `proc:file` grant before, so this only preserves what it
+# already had.
+allow mbm_spy proc_bootinfo:file r_file_perms;

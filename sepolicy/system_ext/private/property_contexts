@@ -1,0 +1,89 @@
+# Two properties that a VENDOR process reads or writes but that do NOT live in
+# the vendor namespace, so they cannot be labelled from sepolicy/vendor:
+#
+#   check_prop_prefix --strict: 2 violations found
+#     ro.sys.battery.FirstUsageDate
+#     ro.rkp.csr_uploaded
+#   vendor's and odm's property_contexts MUST use ONLY vendor-prefixed
+#   properties. This is enforced by VTS.
+#
+# Unlabelled they fall on default_prop, and that is a dead end in BOTH
+# directions -- default_prop is system_internal_prop (public/property.te:272), so
+#   * no vendor domain may ever be granted the read
+#     (private/property.te: neverallow { domain -coredomain }
+#      { system_property_type ... -system_public_property_type }:file
+#      no_rw_file_perms), and
+#   * nothing but init may set it
+#     (private/property.te:796 neverallow { domain -init }
+#      default_prop:property_service set).
+#
+# WHY exported_default_prop AND NOT A NEW TYPE. The first attempt declared
+# Motorola's own moto_battinfo_prop / rkp_config_prop here as public system_ext
+# types, the way stock does. That fails this tree's build in two separate ways:
+#
+#   treble_sepolicy_tests_{30.0,31.0,32.0,33.0,34.0,202404}:
+#     The following public types were found added to the policy without an entry
+#     into the compatibility mapping file(s) ... moto_battinfo_prop rkp_config_prop
+#   sepolicy_neverallows:
+#     neverallow ... violated by allow vendor_init rkp_config_prop:property_service
+#     { set }   (system_restricted_property_type may not be set by a non-coredomain)
+#
+# The first would require editing six compat .cil files inside system/sepolicy
+# for every future API level; the second would force the type public anyway.
+#
+# exported_default_prop is AOSP's own bucket for exactly this case -- a
+# system-namespace property that vendor code touches. It is
+# system_vendor_config_prop (public/property.te:156), which expands to
+# system_public_prop + set_prop(vendor_init, ...) + a neverallow limiting writes
+# to init/vendor_init, and private/domain.te:522 already gives EVERY domain the
+# read. So these two lines need no accompanying allow rule anywhere, add no new
+# type, and need no compat mapping.
+#
+# ro.sys.battery.FirstUsageDate -- polled by /vendor/bin/batt_health roughly
+# once a second. 14537 of the 15603 denials in a 4.9 h capture, 93% of the whole
+# log. Stock labels it moto_battinfo_prop in system_ext_property_contexts:422
+# and grants batt_health the read; exported_default_prop is the same access with
+# no new type.
+ro.sys.battery.FirstUsageDate   u:object_r:exported_default_prop:s0
+
+# ro.rkp.csr_uploaded -- set by /vendor/bin/init.mmi.boot.sh (running as
+# vendor_init) after the remote key-provisioning CSR upload. Two denials per
+# boot. Stock: system_ext_property_contexts:406 (rkp_config_prop).
+# vendor_init already holds set on exported_default_prop
+# (private/vendor_init.te:290).
+ro.rkp.csr_uploaded             u:object_r:exported_default_prop:s0
+
+# ro.mot.build.customerid -- read by /vendor/bin/thermal-engine-v2,
+# /vendor/bin/rmt_storage and vendor/lib64/libqcrilNr.so (all vendor-side; no
+# coredomain reader in this build). Unlabelled it lands on default_prop, which
+# is system_internal_prop and can never be read by a vendor domain; it is part
+# of vendor_thermal-engine's residual `{ read } default_prop` denials.
+#
+# ro.mot. is not a vendor prefix, so this cannot go in
+# ../../vendor/property_contexts -- same check_prop_prefix constraint as the two
+# entries above.
+#
+# THIS ONE USES STOCK'S EXACT TYPE rather than exported_default_prop:
+# system_ext_property_contexts:268 says `build_prop`, which is
+# system_restricted_prop (public/property.te:66) and therefore explicitly exempt
+# from the non-coredomain read neverallow -- several vendor domains in this tree
+# already hold get_prop(..., build_prop). The reader grant for thermal-engine is
+# in ../../vendor/vendor_thermal-engine.te.
+ro.mot.build.customerid         u:object_r:build_prop:s0
+
+# sys.arcfox.powershare -- the reverse-wireless-charging (power share) toggle.
+# Set by the ArcfoxPowerShare app (system_app), read by vendor_init to trigger the
+# write in init.arcfox-powershare.rc.
+#
+# exported_system_prop is the UNIQUE type that works here, not a stylistic choice:
+#   - init's action_parser IsActionableProperty() REJECTS a vendor-rc property
+#     trigger at parse time unless vendor_init can read the name, and this device
+#     has ro.actionable_compatible_property.enabled=true.
+#   - a bare sys.* is system_prop, which vendor_init cannot read.
+#   - a vendor.* name can never be set by a coredomain (property.te neverallow).
+#   - exported_system_prop is system_public_prop; private/domain.te already gives
+#     vendor_init the read and private/system_app.te the set, and the
+#     compatible_property_only neverallow exempts coredomain/appdomain.
+# So: no new type, no new allow rule. If this line is missing the toggle is simply
+# inert (init logs "unexported property trigger found") -- no boot risk.
+sys.arcfox.powershare           u:object_r:exported_system_prop:s0

@@ -1,0 +1,18 @@
+# installd stats every mounted filesystem to decide which ones support quotas
+# (InstalldNativeService::invalidateMounts -> GetQuotaProjectId). Three of this
+# device's context= mounts are vendor types it has no rule for:
+#
+#   avc: denied { quotaget } for comm="binder:2486_1" scontext=u:r:installd:s0
+#        tcontext=u:object_r:firmware_file:s0     tclass=filesystem
+#        tcontext=u:object_r:bt_firmware_file:s0
+#        tcontext=u:object_r:fsg_file:s0
+#
+# 15 per boot (5 mounts x 3 types). These are /vendor/firmware_mnt,
+# /vendor/bt_firmware and /vendor/fsg -- read-only ext4 images mounted with
+# context=, none of which support project quotas anyway.
+#
+# COSMETIC: installd treats the failure as "no quota support", which is the
+# correct answer for these mounts. The grant only stops it asking noisily.
+# quotaget is a filesystem-class permission; it conveys nothing but the
+# quotactl(Q_GETQUOTA) result and no file access.
+allow installd { firmware_file bt_firmware_file fsg_file }:filesystem quotaget;

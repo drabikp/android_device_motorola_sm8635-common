@@ -29,6 +29,18 @@ allow init_wls kmsg_device:chr_file rw_file_perms;
 # nothing new.
 allow init_wls vendor_sysfs_battery_supply:dir r_dir_perms;
 allow init_wls vendor_sysfs_battery_supply:file rw_file_perms;
+
+# setattr, SEPARATELY, BECAUSE rw_file_perms DOES NOT INCLUDE IT.
+# public/global_macros:27 is  w_file_perms = { open append write lock map }  --
+# no setattr anywhere in r_/w_/rw_file_perms. This script's whole first job is
+# chown/chmod, and it was getting that through `allow init_wls sysfs:file
+# { getattr setattr }` further down while every attribute was generic sysfs.
+# genfs_contexts now labels wls_input_current_limit vendor_sysfs_battery_supply
+# (stock's own genfscon, added so thermal-engine can write it), and that node is
+# in this script's chown list -- so without this line the relabel would have
+# silently broken the chown that hands reverse wireless charging to the
+# framework. Relabelling a node can REMOVE access; check every existing writer.
+allow init_wls vendor_sysfs_battery_supply:file setattr;
 allow init_wls vendor_sysfs_usb_supply:dir r_dir_perms;
 
 # The wireless charger attributes themselves.

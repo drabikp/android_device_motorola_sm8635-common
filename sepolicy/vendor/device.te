@@ -31,3 +31,16 @@ type utags_block_device, dev_type;
 type cid_block_device, dev_type;
 type kpan_block_device, dev_type;
 type bllogs_block_device, dev_type;
+
+# /dev/mmi_sys_temp -- Motorola's system-temperature character device, opened
+# read/write by thermal-engine and falling through to u:object_r:device:s0:
+#
+#   avc: denied { read write } for comm="thermal-engine-" name="mmi_sys_temp"
+#        scontext=u:r:vendor_thermal-engine:s0 tcontext=u:object_r:device:s0
+#        tclass=chr_file
+#
+# Stock uses QCOM's thermal_device (vendor_file_contexts:1191), but that type is
+# only declared in sepolicy_vndr/legacy-um/legacy and this board resolves to
+# sepolicy_vndr/sm8650 (UM_6_1_FAMILY per SEPolicy.mk), where it does not exist
+# -- checkfc rejects it outright. Hence a local type with the same meaning.
+type vendor_mmi_thermal_device, dev_type;

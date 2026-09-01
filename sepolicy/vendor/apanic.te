@@ -48,6 +48,7 @@ allow apanic pstorefs:file create_file_perms;
 # u:object_r:proc:s0, hence the write on plain proc rather than a type of its
 # own. /proc/version is read by the report header.
 #
+# SUPERSEDED (see file.te and the grant at the end of this file).
 # NOT DECLARED: proc_bootinfo -- see the same note in mmi_boot.te; /proc/bootinfo
 # is plain proc here and the rule below already covers it.
 allow apanic proc:file rw_file_perms;
@@ -97,3 +98,8 @@ get_prop(apanic, vendor_mot_init_prop)
 # stale comment. Granting a late_start oneshot the power to reboot the phone on
 # the strength of a comment is not a trade worth making; if a future
 # kpreadwrite/kpgather turns out to need it, it will show up as a denial.
+
+# /proc/bootinfo now carries its own type (see file.te). This domain reached it
+# through its broad `proc:file` grant before, so this only preserves what it
+# already had.
+allow apanic proc_bootinfo:file r_file_perms;

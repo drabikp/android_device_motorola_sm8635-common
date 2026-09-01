@@ -21,3 +21,45 @@ allow hal_health_default vendor_sysfs_battery_supply:lnk_file r_file_perms;
 allow hal_health_default vendor_sysfs_usb_supply:dir r_dir_perms;
 allow hal_health_default vendor_sysfs_usb_supply:file r_file_perms;
 allow hal_health_default vendor_sysfs_usb_supply:lnk_file r_file_perms;
+
+
+# ---------------------------------------------------------------------------
+# THE REMAINING `type` DENIALS -- 190 per 75 s boot, 985 per 4.9 h, the second
+# largest source of denials on this build:
+#
+#   avc: denied { read } for name="type" dev="sysfs" ino=124169
+#        scontext=u:r:hal_health_default:s0 tcontext=u:object_r:sysfs:s0
+#   avc: denied { read } for name="type" dev="sysfs" ino=121048   (same contexts)
+#
+# EXACTLY TWO inodes, every boot. Resolved on the live device by walking
+# /sys/class/power_supply and reading each entry's realpath context: six of the
+# eight supplies carry a QCOM/Motorola label, and precisely two are generic
+# u:object_r:sysfs:s0 --
+#
+#   charger       .../ac0000.qcom,qupv3_0_geni_se/a84000.i2c/i2c-1/1-0052/power_supply/charger
+#   flip_battery  .../ac0000.qcom,qupv3_0_geni_se/a84000.i2c/i2c-1/1-0064/power_supply/flip_battery
+#
+# WHY THIS IS A READ GRANT AND NOT A genfscon. Both live behind the qupv3 i2c
+# controller, and genfs_contexts in this directory records the measurement that
+# the adapter renumbers between boots (i2c-1 one boot, i2c-2 the next, and the
+# client directory renumbers with it: 1-0052 -> 2-0052). genfscon matches a fixed
+# path prefix, so no entry can track them, and a previous attempt "worked" only
+# on the boot whose enumeration happened to match. Stock does not label them
+# either -- its vendor_sepolicy.cil has genfscon entries for battery,
+# main_battery, mmi_battery, usb, wireless and ucsi1 and NOTHING for these two.
+#
+# A prefix entry on the controller node itself (.../a84000.i2c, which is a
+# devicetree name and therefore stable) WOULD survive the renumbering, but it
+# relabels the whole bus subtree -- including the wakeup children that
+# system_suspend walks and the charge/voltage/current attributes
+# vendor_thermal-engine stats -- and that blast radius cannot be verified without
+# a flash. A read-only grant on the generic type cannot break any other domain,
+# so that is what is used here.
+#
+# COSMETIC: battery reporting is unaffected. Verified live with `dumpsys battery`
+# -- level, voltage (4536 mV), temperature (28.0 C), technology, charge counter
+# and design capacity all populate, because they come from the correctly
+# labelled `battery` node. The HAL only fails to CLASSIFY these two supplies.
+allow hal_health_default sysfs:dir r_dir_perms;
+allow hal_health_default sysfs:file r_file_perms;
+allow hal_health_default sysfs:lnk_file r_file_perms;

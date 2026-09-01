@@ -35,7 +35,21 @@ allow init_block_perm cid_block_device:blk_file { getattr setattr };
 
 # The service runs as root; CAP_CHOWN for the owner change and CAP_FOWNER for
 # chmod on nodes it does not own.
-allow init_block_perm self:capability { chown fowner };
+#
+# fsetid was added after measuring a clean boot: six denials, all from `chmod`:
+#
+#   avc: denied { fsetid } for comm="chmod" capability=4
+#        scontext=u:r:init_block_perm:s0 tcontext=u:r:init_block_perm:s0
+#        tclass=capability
+#
+# capability=4 is CAP_FSETID. The kernel consults it in inode_change_ok()
+# whenever a chmod would set a group-execute/setgid bit on a file whose group is
+# not one of the caller's -- which is every `chmod -L 0660` this script does on a
+# /dev/block node owned root:system or root:radio. Without it the chmod SUCCEEDS
+# but the setgid bit is silently stripped, so this is a correctness fix for the
+# 0660 modes on utags/utagsBackup/cid rather than pure log noise, and it is the
+# same capability stock's equivalent domain holds.
+allow init_block_perm self:capability { chown fowner fsetid };
 
 # DROPPED, all four for the same reason -- arcfox has no such partition, so the
 # type would label nothing and the rule could never fire:

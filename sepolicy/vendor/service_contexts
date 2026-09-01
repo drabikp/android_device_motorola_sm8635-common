@@ -2,3 +2,27 @@
 # rather than stock's (stock's choice trips an AOSP neverallow).
 motorola.hardware.sensors.ISensorExt/default                              u:object_r:vendor_hal_sensorext_service:s0
 vendor.arcsoft.hardware.camera.postproc.IPostProcService/default          u:object_r:vendor_hal_arcsoftpp_service:s0
+
+# Motorola fingerprint extensions -- fingerprint gestures (FpsNavigate), the
+# vendor control interface (IMotoFingerPrint) and the factory sensor self-test
+# (IMotoCaptiveSensorTest). All three addService() calls were refused:
+#
+#   avc: denied { add } for pid=2771 uid=1000
+#        name=com.motorola.hardware.biometric.fingerprint.IMotoFpsNavigate/default
+#        scontext=u:r:hal_fingerprint_default:s0
+#        tcontext=u:object_r:default_android_service:s0 tclass=service_manager
+#
+# and the same for IMotoFingerPrint/default and IMotoCaptiveSensorTest/default,
+# twice each per boot.
+com.motorola.hardware.biometric.fingerprint.IMotoFingerPrint/default       u:object_r:vendor_hal_motofingerprint_service:s0
+com.motorola.hardware.biometric.fingerprint.IMotoFpsNavigate/default       u:object_r:vendor_hal_motofingerprint_service:s0
+com.motorola.hardware.biometric.fingerprint.IMotoCaptiveSensorTest/default u:object_r:vendor_hal_motofingerprint_service:s0
+
+# Reverse wireless charging (IMotPowerShare) and the wireless-charger accessory
+# interface (IMotWlc). Instance names are stock's, from
+# vendor/etc/selinux/vendor_service_contexts; only the TYPE is local. Both are
+# VINTF-stable AIDL, so these entries are useless on their own -- the matching
+# vendor/etc/vintf/manifest/*.xml fragments must ship too or servicemanager
+# rejects the addService. See hal_motpowershare_default.te.
+motorola.hardware.wireless.powershare.IMotPowerShare/default              u:object_r:vendor_hal_motpowershare_service:s0
+motorola.hardware.wireless.wlc.IMotWlc/default                            u:object_r:vendor_hal_motwlc_service:s0

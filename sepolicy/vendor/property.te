@@ -171,3 +171,212 @@ set_prop(vendor_init, vendor_tetras_prop)
 # nothing. Stock also classes it vendor_internal_property_type, so a coredomain
 # reader would be a neverallow violation there too.
 vendor_internal_prop(vendor_camera_ledtorchmode_prop)
+
+
+# --- DOUBLE-TAP-TO-WAKE SWITCH ---------------------------------------------
+#
+# persist.vendor.arcfox.dt2w. Defaults to 1 from vendor.prop; the persistent
+# store overrides it on later boots. init.arcfox-touch-gesture.rc keys its
+# compound trigger off this and writes 49 / 48 to
+# /sys/class/touchscreen/{primary,secondary}/gesture.
+#
+# READ-ONLY FROM SHELL, AND THAT IS NOT AN OVERSIGHT. The first version of this
+# change also carried `set_prop(shell, vendor_arcfox_dt2w_prop)` so the feature
+# could be toggled over adb. It does not build:
+#
+#   libsepol.report_failure: neverallow on line 488 of
+#   system/sepolicy/private/property.te violated by
+#   allow shell vendor_arcfox_dt2w_prop:property_service { set };
+#
+# That neverallow is
+#   neverallow { coredomain -init -system_writes_vendor_properties_violators }
+#             { property_type -system_property_type -extended_core_property_type
+#             }:property_service set;
+# i.e. NO coredomain may set ANY vendor property, and `public` does not exempt
+# it -- vendor_public_property_type only relaxes the READ neverallow at :189 and
+# the narrower set neverallow at :196, not this one. The only escape is the
+# legacy system_writes_vendor_properties_violators attribute, which is not
+# something to opt this device into for a wake gesture.
+#
+# So: no `adb shell setprop persist.vendor.arcfox.dt2w 0`. Changing the value
+# means rebuilding vendor.prop, editing /data/property/persistent_properties, or
+# a root shell. Do not write a verification step that assumes otherwise.
+#
+# The type is still PUBLIC and shell still gets read, because that is allowed
+# (only `set` is blocked) and it is the one root-free confirmation available:
+# `adb shell getprop persist.vendor.arcfox.dt2w` must print 1. The gesture node
+# itself is unreadable to shell -- it is generic sysfs and shell has no
+# sysfs:file read -- and reading it would only return the devicetree capability
+# mask "06" anyway, never the armed state.
+#
+# init itself needs no rule to evaluate `on property:` triggers -- it IS the
+# property server and reads its own in-memory state, not the property file.
+# vendor_init needs no rule either: it only executes the `write` command, and
+# the sysfs write is already covered by AOSP's
+#   allow vendor_init { sysfs_type -sysfs_usermodehelper }:file rw_file_perms;
+# (system/sepolicy/private/vendor_init.te:235). The gesture attribute file is
+# plain u:object_r:sysfs:s0 -- verified on the device -- so NO genfscon and no
+# new file type are involved.
+
+
+# ===========================================================================
+# ROUND TWO -- properties found by measuring a clean 75 s boot capture and a
+# 4.9 h steady-state capture (2026-08-31). Every entry below is backed by a
+# counted AVC, not by inspection.
+# ===========================================================================
+
+# ro.sys.battery.FirstUsageDate -- THE SINGLE BIGGEST SOURCE OF DENIALS ON THIS
+# BUILD. Over 4.9 h of steady state batt_health produced 14537 of the 15603
+# denials in the log (93%, ~49/min, roughly once a second):
+#
+#   avc: denied { read } for name="u:object_r:default_prop:s0" dev="tmpfs"
+#        scontext=u:r:batt_health:s0 tcontext=u:object_r:default_prop:s0
+#        tclass=file
+#
+# The property-area read is denied, so the name never appears in the AVC. It was
+# identified by elimination: `strings /vendor/bin/batt_health` contains exactly
+# eight property names --
+#   ro.boot.mode, ro.bootmode, ro.boot.secure_hardware   -> bootloader_prop
+#   ro.build.description, ro.build.type, ro.product.board -> build_prop
+#   init.svc.vendor.mbm_spy  -> vendor_default_prop (plat_property_contexts:300
+#                               maps the whole init.svc.vendor. prefix there,
+#                               NOT to init_service_status_private_prop), which
+#                               domain.te:508 already hands to every vendor domain
+#   ro.sys.battery.FirstUsageDate -> no context entry anywhere in this build,
+#                               so it lands on default_prop
+# -- and default_prop is `system_internal_prop` (public/property.te:272), which
+# means a vendor domain can NEVER be granted the read. Relabelling is the only
+# possible fix, not a stylistic preference.
+#
+# STOCK'S OWN ANSWER, found in system_ext_property_contexts:422:
+#   ro.sys.battery.FirstUsageDate   u:object_r:moto_battinfo_prop:s0
+# The note further up this file saying "we cannot even tell which property
+# moto_battinfo_prop labels" was WRONG -- it only searched vendor_property_contexts,
+# and the entry is on the system_ext partition. THIS SUPERSEDES THAT NOTE.
+#
+# Stock's type lives on system_ext because stock's SettingsMoto reads it. We
+# only ship BOARD_VENDOR_SEPOLICY_DIRS, and grepping the whole built image
+# (out/target/product/arcfox/{system,system_ext,product,vendor}) finds the string
+# in exactly one file, /vendor/bin/batt_health -- SettingsMoto is not in this
+# ROM. So a vendor type has no reader to strand.
+#
+# `restricted` rather than `internal`: internal would neverallow any coredomain
+# read, which would have to be undone if a Moto Settings package is ever added.
+# restricted only forbids coredomain WRITES, which nothing wants.
+#
+# NOTE ON VALUE: nothing in this build SETS this property, so the read will
+# return empty even once it is allowed. That matches a factory-fresh stock
+# device before Settings writes the date. The fix removes the denial storm, it
+# does not populate a first-usage date.
+#
+# THE TYPE IS NOT DECLARED HERE. A first attempt put it in this file as
+# vendor_mot_battinfo_prop, and the build rejected it:
+#
+#   check_prop_prefix --strict: vendor's and odm's property_contexts MUST use
+#   ONLY vendor-prefixed properties -- ro.sys.battery.FirstUsageDate
+#
+# ro.sys. is not a vendor prefix. The property is labelled
+# exported_default_prop in ../system_ext/private/property_contexts instead --
+# AOSP's own bucket for a system-namespace property that vendor code touches,
+# which private/domain.te:522 already grants every domain the read on, so no
+# new type and no new allow rule are involved. See that file for why declaring
+# Motorola's moto_battinfo_prop as a public system_ext type (stock's own answer)
+# is not viable here: it fails treble_sepolicy_tests for six API levels for want
+# of compat-mapping entries.
+
+# vendor.ese.* and persist.vendor.ese.* -- the eSE (embedded secure element)
+# control namespace. FUNCTIONAL, not cosmetic: the secure-element HAL is trying
+# to publish its own state and is refused.
+#
+#   avc: denied { set } for property=vendor.ese.status
+#   avc: denied { set } for property=vendor.ese.nfc.disable
+#   avc: denied { set } for property=persist.vendor.ese.mute
+#        scontext=u:r:hal_secure_element_default:s0
+#        tcontext=u:object_r:vendor_default_prop:s0 tclass=property_service
+#
+# Same trap as every other prefix in this file: domain.te:841 neverallows
+# anything but init/vendor_init from setting vendor_default_prop, so the writes
+# can only be fixed by giving the prefix a type. Name and both prefixes are
+# stock's, from vendor_property_contexts:698-699.
+vendor_restricted_prop(vendor_mot_secure_element_prop)
+
+# Read access granted back for the same reason documented above: before the
+# relabel the prefix fell through to vendor_default_prop, which domain.te:508
+# hands to every non-core non-app domain for free. No coredomain reads it today
+# (the :508 branch is the one PRODUCT_SHIPPING_API_LEVEL 34 selects, and it
+# excludes coredomain), so no core grant is added.
+get_prop({ domain -coredomain -appdomain }, vendor_mot_secure_element_prop)
+
+# persist.vendor.ssr.enable_ramdumps -- QCOM's subsystem-restart ramdump switch.
+# The property IS already labelled (QCOM's sepolicy_vndr owns vendor_ssr_prop);
+# the denial is purely that vendor_init has no `set` on that type:
+#
+#   avc: denied { set } for property=persist.vendor.ssr.enable_ramdumps
+#        scontext=u:r:vendor_init:s0 tcontext=u:object_r:vendor_ssr_prop:s0
+#
+# A vendor init rc sets it, and a vendor rc runs as vendor_init.
+set_prop(vendor_init, vendor_ssr_prop)
+
+# persist.audio.fluence.{voicecall,voicecomm,speaker} -- three setprops in a
+# QCOM vendor audio rc. audio_prop is `system_public_prop`
+# (public/property.te:212), so a vendor domain may hold `set` on it; vendor_init
+# simply is not granted it by AOSP.
+#
+#   avc: denied { set } for property=persist.audio.fluence.voicecall
+#        scontext=u:r:vendor_init:s0 tcontext=u:object_r:audio_prop:s0
+set_prop(vendor_init, audio_prop)
+
+# NOT FIXABLE HERE, and this is a hard limit rather than a judgement call.
+# Four more vendor_init setprops land on default_prop:
+#   media.settings.xml, audio.sys.offload.pstimeout.secs,
+#   audio.sys.noisy.broadcast.delay, audio.record.delay
+# private/property.te:796 is
+#   neverallow { domain -init } default_prop:property_service set;
+# -- vendor_init is NOT exempt, so no allow rule can be written. The only
+# possible fixes are (a) relabel those four names to a vendor type, which would
+# strand audioserver/system_server (coredomains that read audio.sys.* and
+# media.settings.xml today through the free default_prop read), or (b) drop the
+# setprops from the vendor rc, which is not this file's to edit. Stock has no
+# property_contexts entry for any of the four either, so stock fails the same
+# way. ACCEPTED RESIDUAL: 4 denials per boot.
+
+# ---------------------------------------------------------------------------
+# ROUND THREE -- the last two properties vendor domains read off default_prop.
+#
+# vendor_thermal-engine had three `{ read } default_prop` denials per boot that
+# survived round two. `strings /vendor/bin/thermal-engine-v2` lists ten property
+# names; eight already resolve to a type it can read (ro.boot.* -> bootloader_prop,
+# ro.bootmode, ro.arch/ro.carrier -> build_prop/exported_default_prop,
+# ro.vendor.hw.* -> vendor_mot_hw_prop, vendor.thermal.mode -> vendor_default_prop
+# via domain.te:508). The remaining two have no context entry anywhere in this
+# build and therefore land on default_prop, which no vendor domain can ever be
+# granted (system_internal_prop, public/property.te:272):
+#
+#   ro.mot.build.customerid      -> ../system_ext/private/property_contexts
+#                                   (ro.mot. is not a vendor prefix, so it must
+#                                   go there; stock: system_ext_property_contexts:268)
+#   ro.vendor.build.motfactory   -> here, below
+#
+# BOTH ARE UNSET ON THIS DEVICE (`getprop` returns empty for each), so labelling
+# them cannot change behaviour: __system_property_find() returns NULL whether the
+# read is refused or the property is simply absent. This is the opposite of the
+# proc_pid_max mistake documented in vendor_thermal-engine.te -- there, a grant
+# unlocked a loop bound and a 741-denial scan; here there is no value to act on.
+#
+# ro.vendor.build.motfactory -- the factory-image marker. Read by
+# thermal-engine-v2, rmt_storage, tcmdhelp, libmdmcutback.so, libar-pal.so and
+# the QTI thermal HAL, and used as an `on property:...=1` trigger condition in
+# four vendor rc files. EVERY reader is vendor-side (checked across the whole
+# built image), so moving it off default_prop strands nothing -- and it is the
+# other direction that is broken today, since default_prop is unreadable to all
+# of them. Type name is stock's (vendor_property_contexts:431).
+#
+# `restricted` rather than stock's implied "public": the only difference is
+# whether a coredomain may be granted the read, and none wants it. Consistent
+# with every other type in this file.
+vendor_restricted_prop(vendor_mot_public_default_prop)
+
+# Read granted back for the usual reason -- these properties were never on
+# vendor_default_prop, so there is no domain.te:508 fallthrough to restore, but
+# the vendor readers listed above need it explicitly.
+get_prop({ domain -coredomain -appdomain }, vendor_mot_public_default_prop)

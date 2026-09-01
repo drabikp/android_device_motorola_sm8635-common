@@ -39,3 +39,38 @@ allow capsense_reset sysfs:lnk_file r_file_perms;
 
 # Progress and error reporting to /dev/kmsg.
 allow capsense_reset kmsg_device:chr_file rw_file_perms;
+
+
+# ---------------------------------------------------------------------------
+# ROUND TWO -- two measured denials, both FUNCTIONAL.
+#
+# 1) /sys/class/power_supply/usb/online. The comment above says "both paths are
+#    u:object_r:sysfs:s0 here" -- that is no longer true for the usb one. The
+#    live device resolves /sys/class/power_supply/usb to
+#    .../soc:qcom,pmic_glink:qcom,battery_charger/power_supply/usb, which QCOM's
+#    sepolicy_vndr labels u:object_r:vendor_sysfs_usb_supply:s0, and the daemon
+#    is stopped at the directory:
+#
+#      avc: denied { search } for comm="Capsensor Uevent" name="usb" dev="sysfs"
+#           scontext=u:r:capsense_reset:s0
+#           tcontext=u:object_r:vendor_sysfs_usb_supply:s0 tclass=dir
+#
+#    16 per boot and it keeps firing in steady state (20 more over 4.9 h), i.e.
+#    on every charger plug/unplug. THIS IS THE FEATURE FAILING: the daemon exists
+#    to re-take the SAR capacitive baseline when USB attaches, and it cannot see
+#    the attach state.
+allow capsense_reset vendor_sysfs_usb_supply:dir r_dir_perms;
+allow capsense_reset vendor_sysfs_usb_supply:file r_file_perms;
+allow capsense_reset vendor_sysfs_usb_supply:lnk_file r_file_perms;
+
+# 2) The RETURN half of the sensor-service binder link. binder_call() above
+#    gives capsense_reset -> system_server; the sensor framework calls BACK into
+#    the client, and that direction was never granted:
+#
+#      avc: denied { call } for comm="binder:3368_2"
+#           scontext=u:r:system_server:s0 tcontext=u:r:capsense_reset:s0
+#           tclass=binder
+#
+#    3368 is system_server. Without it the ISensorManager event callbacks the
+#    daemon subscribed to never arrive.
+binder_call(system_server, capsense_reset)

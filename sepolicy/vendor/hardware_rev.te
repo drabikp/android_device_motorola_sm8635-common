@@ -69,3 +69,7 @@ allow hardware_rev proc:file r_file_perms;
 # ro.vendor.mot.hw. entry added to property_contexts.
 get_prop(hardware_rev, bootloader_prop)
 get_prop(hardware_rev, vendor_mot_hw_prop)
+
+# /proc/bootinfo now carries its own type (see file.te); this preserves the
+# access the broad `proc:file` grant above already gave it.
+allow hardware_rev proc_bootinfo:file r_file_perms;

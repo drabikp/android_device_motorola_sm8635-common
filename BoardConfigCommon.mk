@@ -770,3 +770,18 @@ WIFI_FEATURE_HOSTAPD_11BE                     := true
 
 # Motorola-specific labels go here, grown from actual denials/refusals.
 BOARD_VENDOR_SEPOLICY_DIRS += $(COMMON_PATH)/sepolicy/vendor
+
+# Motorola system_ext sepolicy -- ONE FILE, a property_contexts with two lines.
+# They are here because they CANNOT be in sepolicy/vendor:
+# ro.sys.battery.FirstUsageDate and ro.rkp.csr_uploaded are not
+# vendor-namespaced, and the build's check_prop_prefix --strict (enforced by
+# VTS) rejects any non ro.vendor. / vendor. / persist.vendor. / ro.boot. /
+# ro.hardware. name in vendor_property_contexts. Unlabelled they land on
+# default_prop, which is system_internal_prop -- a hard neverallow for the
+# vendor domains that read (batt_health, 93% of all denials on this build) and
+# write (vendor_init) them. See sepolicy/system_ext/private/property_contexts,
+# which also records why no new TYPE is declared.
+#
+# PRIVATE only: no public system_ext type is introduced, so nothing has to be
+# added to system/sepolicy/private/compat/*/*.cil.
+SYSTEM_EXT_PRIVATE_SEPOLICY_DIRS += $(COMMON_PATH)/sepolicy/system_ext/private

@@ -1,0 +1,26 @@
+# The audio HAL cannot read this unit's calibration blob:
+#
+#   avc: denied { read } for comm="binder:1922_2" name="audio.cal" dev="sde2"
+#        ino=108 scontext=u:r:hal_audio_default:s0
+#        tcontext=u:object_r:mnt_vendor_file:s0 tclass=file
+#
+# sde2 is the persist partition. Note the tcontext: it is mnt_vendor_file, NOT
+# vendor_persist_audio_file, which means the file is NOT inside
+# /mnt/vendor/persist/audio/ -- QCOM's sepolicy_vndr already labels that whole
+# directory (sm8650/generic/vendor/common/file_contexts:458, the same line stock
+# has), so anything under it would have come out labelled. The low inode (108)
+# puts it at the top of the persist tree, i.e. /mnt/vendor/persist/audio.cal.
+#
+# A file_contexts entry is NOT used, deliberately: /mnt/vendor/persist is
+# unreadable to a non-root shell on this device (`ls -Z /mnt/vendor/persist`
+# -> Permission denied, and `adb root` is unavailable), so the exact filename
+# cannot be confirmed, and writing a regex against a guessed path is how this
+# tree has gone wrong before. A read grant on the type the file actually has is
+# exact, is read-only, and is the same grant mmi_boot already holds on
+# mnt_vendor_file for /mnt/vendor/persist/factory/fti.
+#
+# FUNCTIONAL: with the read denied the HAL falls back to default tuning. One
+# denial per boot, because it reads once and caches the failure.
+allow hal_audio_default mnt_vendor_file:dir r_dir_perms;
+allow hal_audio_default mnt_vendor_file:file r_file_perms;
+allow hal_audio_default mnt_vendor_file:lnk_file r_file_perms;

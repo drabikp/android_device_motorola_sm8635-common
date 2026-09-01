@@ -141,3 +141,7 @@ set_prop(hal_camera_default, vendor_camera_ledtorchmode_prop)
 #                                -> hal_cameradesktop_hwservice
 #   plus the hal_cameradesktop / _client / _server attribute set in the CIL.
 # ---------------------------------------------------------------------------
+
+# The Motorola desktop-camera HIDL probe. See service.te for the denial and for
+# why this only converts it into a clean "not registered" result.
+allow hal_camera_default vendor_hal_camera_desktop_hwservice:hwservice_manager find;

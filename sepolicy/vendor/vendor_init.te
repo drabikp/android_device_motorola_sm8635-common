@@ -1,0 +1,24 @@
+# NOT FIXABLE, recorded so it is not re-attempted.
+#
+#   avc: denied { write } for comm="init" name="vendor_de" dev="dm-43"
+#        scontext=u:r:vendor_init:s0 tcontext=u:object_r:vendor_userdir_file:s0
+#        tclass=dir
+#
+# A vendor init rc tries to create something under /data/vendor_de on
+# post-fs-data. AOSP forbids it outright -- system/sepolicy/private/vold.te:400
+# is
+#
+#   neverallow { domain -vold -init } { media_userdir_file system_userdir_file
+#                                       vendor_userdir_file }:dir
+#                                     { add_name remove_name write };
+#
+# and vendor_init is NOT on the exempt list. Adding the rule fails the build:
+#
+#   libsepol.report_failure: neverallow on line 408 of
+#   system/sepolicy/private/vold.te violated by
+#   allow vendor_init vendor_userdir_file:dir { write add_name };
+#
+# /data/vendor_de is vold's to populate (it creates the per-user subdirectories
+# during FBE setup). The fix is to remove the mkdir from the vendor rc, which is
+# not a sepolicy change. One denial per boot; the directory is empty apart from
+# vold's own "0" anyway (noted in batt_health.te).

@@ -1,0 +1,34 @@
+# system_suspend -- AOSP's suspend service. 110 denials in a single burst at
+# boot, ~71 more over 4.9 h:
+#
+#   avc: denied { read } for name="wakeup_count"/"active_count"/"event_count"/
+#        "expire_count"/"active_time_ms"/"total_time_ms"/"max_time_ms"/
+#        "last_change_ms"/"prevent_suspend_time_ms"/"name"
+#        dev="sysfs" scontext=u:r:system_suspend:s0
+#        tcontext=u:object_r:sysfs:s0            (9 directories)
+#        tcontext=u:object_r:vendor_sysfs_battery_supply:s0   (2 directories)
+#
+# Ten attributes per wakeup source, eleven sources. This is
+# SystemSuspend::getWakeupStats() walking /sys/class/wakeup once.
+#
+# A BLANKET `allow system_suspend_server sysfs:file read` DOES NOT BUILD, and
+# that is worth recording because it is the obvious first move:
+#
+#   libsepol.report_failure: neverallow on line 142 of
+#   system/sepolicy/private/coredomain.te violated by
+#   allow system_suspend sysfs:file { ioctl read lock open watch watch_reads };
+#
+# i.e. full_treble_only(`neverallow { coredomain -apexd -init -ueventd -vold }
+# sysfs:file no_rw_file_perms;'). A core domain may NEVER read unlabelled sysfs.
+# The nine generic directories therefore have to be LABELLED, not granted, and
+# the two already-labelled ones need a grant on their existing type.
+#
+# system_suspend itself is a private AOSP type and cannot be named from
+# BOARD_VENDOR_SEPOLICY_DIRS. system_suspend_server is the public attribute it
+# carries (private/system_suspend.te:1; attribute at public/attributes:436) and
+# is the only handle available here. Nothing else in this policy has it.
+allow system_suspend_server vendor_sysfs_battery_supply:dir r_dir_perms;
+allow system_suspend_server vendor_sysfs_battery_supply:file r_file_perms;
+
+# The nine generic ones are labelled in genfs_contexts, six of them. See that
+# file for the enumeration and for why the remaining three cannot be reached.

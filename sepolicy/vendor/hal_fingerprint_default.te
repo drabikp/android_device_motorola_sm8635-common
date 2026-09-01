@@ -34,3 +34,49 @@ set_prop(hal_fingerprint_default, vendor_mot_fingerprint_status_prop)
 # for the sensor, which is also why its rc asks for the `uhid` group.
 allow hal_fingerprint_default uhid_device:chr_file rw_file_perms;
 get_prop(hal_fingerprint_default, build_bootimage_prop)
+
+
+# ---------------------------------------------------------------------------
+# ROUND THREE, from a clean 75 s boot capture.
+#
+# FIRST, A CORRECTION TO THE HEADER ABOVE: the HAL now DOES register. Measured
+# live on the running device --
+#   `service check android.hardware.biometrics.fingerprint.IFingerprint/default`
+#       -> found
+#   `service list | grep -i finger`
+#       -> 19 android.hardware.biometrics.fingerprint.IFingerprint/default: []
+#          138 fingerprint: [android.hardware.fingerprint.IFingerprintService]
+#   and android.hardware.biometrics.fingerprint-service.fpc is alive as pid 2771.
+# The rules above worked. What follows are the denials that remain AFTER
+# IFingerprint is up, so they are extensions, not the blocking set.
+#
+# 1) The three Motorola extension interfaces. See service_contexts for the
+#    denials. They are refused because the names have no entry in any
+#    service_contexts and therefore land on default_android_service, which no
+#    vendor domain may add to.
+#
+#    SCOPE, honestly stated: registering them removes six denials per boot and
+#    lets the HAL finish its startup sequence instead of erroring out of it.
+#    It does NOT by itself enable fingerprint gestures -- the client side of
+#    IMotoFpsNavigate is a Motorola framework component that this ROM does not
+#    ship, and the AIDL interfaces are not declared in any VINTF manifest here.
+#    If servicemanager still refuses the add after this change, the next thing to
+#    check is the VINTF declaration, which is not this file's to edit.
+add_service(hal_fingerprint_default, vendor_hal_motofingerprint_service)
+
+# 2) /data/vendor/.fps -- the HAL's own state directory, which it creates on
+#    first run:
+#
+#      avc: denied { write } for comm="android.hardwar" name=".fps" dev="dm-43"
+#           scontext=u:r:hal_fingerprint_default:s0
+#           tcontext=u:object_r:vendor_data_file:s0 tclass=dir
+#
+#    dm-43 is /data. The write is on the PARENT (/data/vendor), i.e. the mkdir
+#    itself. Path and type are stock's (vendor_file_contexts:637); the type is
+#    declared in file.te and the path in file_contexts, and the type_transition
+#    is what makes the directory come out labelled correctly when the HAL creates
+#    it rather than only after the next restorecon.
+allow hal_fingerprint_default vendor_data_file:dir { search write add_name };
+type_transition hal_fingerprint_default vendor_data_file:dir fps_data_file ".fps";
+allow hal_fingerprint_default fps_data_file:dir create_dir_perms;
+allow hal_fingerprint_default fps_data_file:file create_file_perms;

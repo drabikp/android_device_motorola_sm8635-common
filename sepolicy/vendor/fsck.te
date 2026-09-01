@@ -1,0 +1,22 @@
+# e2fsck cannot check the three Motorola/QCOM ext4 partitions this device
+# mounts from vendor fstab entries:
+#
+#   avc: denied { read write } for comm="e2fsck" name="sdd18"/"sdd19"/"sdd20"
+#        scontext=u:r:fsck:s0 tcontext=u:object_r:vendor_modem_block_device:s0
+#        tclass=blk_file
+#
+# Resolved against the live by-name directory:
+#   sdd18 = fsg_a        sdd19 = modem_a        sdd20 = bluetooth_a
+#
+# All three are labelled vendor_modem_block_device by file_contexts in this
+# directory (correctly -- see the long note there about fsg vs fsg_[ab]), but
+# nothing in AOSP or QCOM's sepolicy_vndr grants fsck that type, so the check is
+# refused on every one of them.
+#
+# FUNCTIONAL, though quietly so: fs_mgr runs e2fsck before mounting when the
+# filesystem is not marked clean. With the check refused the mount still
+# proceeds, so a dirty modem/fsg/bluetooth image is never repaired -- exactly
+# the failure mode the file_contexts note recorded for fsg_a when it briefly
+# carried the EFS type ("e2fsck: Permission denied while trying to open ...").
+# That note fixed the label; it did not add this rule.
+allow fsck vendor_modem_block_device:blk_file rw_file_perms;

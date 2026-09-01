@@ -90,3 +90,31 @@ type persist_camera_file, file_type, vendor_persist_type;
 # metadata directory create/unlink as well.
 type imager_data_file, file_type, data_file_type;
 type imager_metadata_file, file_type, data_file_type;
+
+# /data/vendor/.fps -- the FPC fingerprint HAL's state directory. It creates the
+# directory itself on first run and was denied the mkdir; see
+# hal_fingerprint_default.te. Stock type and path: vendor_file_contexts:637.
+type fps_data_file, file_type, data_file_type;
+
+# /proc/bootinfo -- the bootloader's handoff block (BOOT_SEQ, "Last boot
+# reason", serial, hwrev). Stock declares a type for it and applies it with
+# `(genfscon proc "/bootinfo" (u object_r proc_bootinfo))`
+# (vendor_sepolicy.cil:10, :3292).
+#
+# THIS REVERSES THE "NOT DECLARED: proc_bootinfo" NOTES in mmi_boot.te,
+# apanic.te and mbm_spy.te. Their reasoning was that plain `proc:file read`
+# already covers it -- true for those three domains, which each hold that broad
+# grant. It stopped being true when rild turned out to read the same file:
+#
+#   avc: denied { read } for comm="qmi_motext_hook" name="bootinfo" dev="proc"
+#        scontext=u:r:rild:s0 tcontext=u:object_r:proc:s0 tclass=file
+#
+# Giving rild blanket `proc:file read` to reach one file is a much wider grant
+# than giving the file a type. Every existing reader is granted the new type
+# explicitly below so nothing loses access.
+type proc_bootinfo, fs_type, proc_type;
+
+# /data/vendor/misc/cutback -- the Motorola RF power-cutback state directory
+# rild writes. Verified present on the live device (currently vendor_data_file).
+# Stock type and path: vendor_file_contexts:740. See rild.te.
+type cutback_data_file, file_type, data_file_type;

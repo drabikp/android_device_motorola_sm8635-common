@@ -1,0 +1,3 @@
+# See service.te. This exists so hal_camera_default's probe for the Motorola
+# desktop-camera HIDL interface returns "not registered" instead of an AVC.
+motorola.hardware.camera.desktop::ICameraDesktop  u:object_r:vendor_hal_camera_desktop_hwservice:s0

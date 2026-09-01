@@ -70,5 +70,88 @@ genfscon proc /config u:object_r:proc_hwconf:s0
 # QCOM's sepolicy_vndr already ships sysfs_wakeup for battery/usb/wireless/ucsi1;
 # adding those here is a hard build error ("duplicate entry for genfs entry").
 genfscon sysfs /devices/platform/soc/soc:mmi,charger/power_supply/mmi_battery u:object_r:vendor_sysfs_battery_supply:s0
-genfscon sysfs /devices/platform/soc/soc:mmi,charger/power_supply/mmi_battery/wakeup30 u:object_r:sysfs_wakeup:s0
+# NOTE: the wakeupNN suffix was dropped from this entry when the wakeup-source
+# survey below was done. It was copied from stock as ".../mmi_battery/wakeup30",
+# and NN is a global registration counter that changes between boots -- the same
+# instability this file already documents for the i2c paths. The parent `wakeup`
+# directory is stable and prefix-matching covers every child, which is what
+# stock does for its other ~30 wakeup entries.
+genfscon sysfs /devices/platform/soc/soc:mmi,charger/power_supply/mmi_battery/wakeup u:object_r:sysfs_wakeup:s0
 genfscon sysfs /devices/platform/soc/soc:qcom,pmic_glink/soc:qcom,pmic_glink:mmi,qti-glink-charger/power_supply/main_battery u:object_r:vendor_sysfs_battery_supply:s0
+
+# /proc/bootinfo. Verbatim from stock (vendor_sepolicy.cil:10). See file.te for
+# why this reverses the earlier decision to leave it on the generic proc label,
+# and for the list of domains re-granted below.
+genfscon proc /bootinfo u:object_r:proc_bootinfo:s0
+
+# ---------------------------------------------------------------------------
+# WAKEUP SOURCES -- the 110 system_suspend denials per boot.
+#
+# Enumerated on the live device with
+#   find /sys/devices -maxdepth 10 -type d -name "wakeup[0-9]*"
+# plus `ls -Zd` on each. Eleven sources are walked by
+# SystemSuspend::getWakeupStats(); two are already sysfs_wakeup
+# (/devices/virtual/fastrpc/adsprpc-smd{,-secure}) and are not denied.
+#
+# THE PREFIX IS THE PARENT `wakeup` DIRECTORY, NOT THE wakeupNN CHILD. The NN is
+# a global registration counter and changes between boots (the note in this file
+# about the i2c bus records charger/wakeup21 -> wakeup31 and
+# flip_battery/wakeup8 -> wakeup29 across two boots). genfscon does a plain
+# longest-prefix match on the path, so naming the parent covers every child
+# whatever it is numbered. This is exactly stock's pattern -- around thirty of
+# its genfscon entries end in ".../wakeup" -- and two of the six below are
+# verbatim stock lines (vendor_sepolicy.cil:80 and :355/:356).
+#
+# NOTE the qupv3 instance numbers differ from stock: our kernel exposes the SPI
+# controllers under ac0000.qcom,qupv3_0_geni_se and 8c0000.qcom,qupv3_1_geni_se
+# where stock's line 84 says ac0000.qcom,qupv3_1_geni_se. The paths below are
+# this device's, read off the live filesystem, not stock's.
+genfscon sysfs /devices/platform/soc/soc:qcom,pmic_glink/soc:qcom,pmic_glink:mmi,qti-glink-charger/wakeup u:object_r:sysfs_wakeup:s0
+genfscon sysfs /devices/platform/soc/soc:fpc_fpc1020/wakeup u:object_r:sysfs_wakeup:s0
+genfscon sysfs /devices/platform/soc/soc:mmi,charger/wakeup u:object_r:sysfs_wakeup:s0
+genfscon sysfs /devices/platform/soc/8c0000.qcom,qupv3_1_geni_se/88c000.spi/spi_master/spi1/spi1.0/wakeup u:object_r:sysfs_wakeup:s0
+genfscon sysfs /devices/platform/soc/ac0000.qcom,qupv3_0_geni_se/a90000.spi/spi_master/spi0/spi0.0/wakeup u:object_r:sysfs_wakeup:s0
+#
+# THE OTHER THREE CANNOT BE LABELLED, for the reason already established at the
+# top of this file -- each sits behind an i2c adapter whose bus number is
+# assigned at probe and changes between boots:
+#
+#   .../884000.i2c/i2c-2/2-0008/wakeup                        (the NFC controller)
+#   .../a84000.i2c/i2c-1/1-0052/power_supply/charger/wakeup
+#   .../a84000.i2c/i2c-1/1-0064/power_supply/flip_battery/wakeup
+#
+# A prefix on the controller node itself (884000.i2c / a84000.i2c, which ARE
+# stable devicetree names) would survive the renumbering, but it relabels every
+# attribute of every client on that bus -- the whole NFC device in one case, and
+# in the other the charger/fuel-gauge nodes that hal_health_default and
+# vendor_thermal-engine read. That blast radius cannot be checked without a
+# flash, and coredomain.te:142 forbids the alternative of just granting
+# system_suspend the read.
+#
+# ACCEPTED RESIDUAL: 30 denials per boot (3 sources x 10 attributes). They are
+# wakeup-source STATISTICS; suspend itself does not depend on them, and the
+# SPI/fpc/charger sources that DO carry the interesting wakeups are covered
+# above. The two labelled-but-denied sources are handled by the read grant in
+# system_suspend.te.
+
+# ---------------------------------------------------------------------------
+# wls_input_current_limit -- the wireless-charging input current cap that
+# thermal-engine's te-monitor thread writes as a mitigation step. It was falling
+# through to generic sysfs and the write was refused (7 times in the post-flash
+# capture):
+#
+#   avc: denied { write } for comm="te-monitor" name="wls_input_current_limit"
+#        dev="sysfs" scontext=u:r:vendor_thermal-engine:s0
+#        tcontext=u:object_r:sysfs:s0 tclass=file
+#
+# VERBATIM STOCK (vendor_sepolicy.cil:41), and the path is a pure devicetree
+# path -- no i2c adapter number, no wakeupNN counter -- so unlike the nodes
+# discussed above it is stable across boots. Confirmed present at exactly this
+# path on the live device.
+#
+# The two domains that touch it both already hold the type: vendor_thermal-engine
+# (write, granted in vendor_thermal-engine.te to match stock) and init_wls, which
+# chowns it to system:system -- see the setattr note in init_wls.te, because
+# rw_file_perms does NOT include setattr and init_wls got it from the generic
+# sysfs rule before this relabel.
+genfscon sysfs /devices/platform/soc/soc:qcom,pmic_glink/soc:qcom,pmic_glink:qcom,battery_charger/wls_input_current_limit u:object_r:vendor_sysfs_battery_supply:s0

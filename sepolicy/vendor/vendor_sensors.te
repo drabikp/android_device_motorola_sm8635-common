@@ -1,0 +1,28 @@
+# sscrpcd -- the sensor DSP RPC daemon. Four denials per boot on one file:
+#
+#   avc: denied { read } for comm="sscrpcd" name="mmi,panel_name_s" dev="sysfs"
+#        ino=39 scontext=u:r:vendor_sensors:s0 tcontext=u:object_r:sysfs:s0
+#        tclass=file
+#
+# ino=39 places it in the devicetree export, i.e.
+# /sys/firmware/devicetree/base/chosen/mmi,panel_name_s -- the secondary
+# (cover) display's panel name, which the ALS calibration path needs in order to
+# pick the right compensation table for a fold.
+#
+# STOCK'S LABELLING IS NOT PORTABLE HERE. Stock gives vendor_sensors both
+# sysfs_dt_chosen (genfscon /firmware/devicetree/base/chosen) and
+# sysfs_panel_vendor_info. Adopting sysfs_dt_chosen would relabel the WHOLE
+# /chosen node -- bootargs, mmi,battid, mmi,bl_sigs, mmi,chipid and ~20 more --
+# away from the generic sysfs type that every other reader in this policy uses,
+# and there is no way to check who those readers are without a flash. A
+# read-only grant on the generic type is the same access with no blast radius.
+#
+# `read` only was denied, which means open and getattr are already allowed and
+# the daemon gets as far as the file; this closes the last permission.
+allow vendor_sensors sysfs:dir r_dir_perms;
+allow vendor_sensors sysfs:file r_file_perms;
+allow vendor_sensors sysfs:lnk_file r_file_perms;
+
+# NOT FIXABLE: two reads of a default_prop property per boot. default_prop is
+# system_internal_prop (public/property.te:272); a vendor domain can never be
+# granted it, and the property name is not recoverable from the AVC.

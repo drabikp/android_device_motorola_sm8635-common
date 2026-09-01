@@ -1,0 +1,114 @@
+# motorola.hardware.wireless.powershare-service -- REVERSE wireless charging
+# ("power share": this phone acting as the charging PAD for another device).
+#
+# Ported 2026-09-01 for the reverse-wireless-charging work. Until now the binary
+# shipped with the generic u:object_r:vendor_file:s0 label, so init refused to
+# start it every boot:
+#
+#   E init: Could not start service 'vendor.mot.powershare-hal' as part of class
+#           'hal': File /vendor/bin/hw/motorola.hardware.wireless.powershare-service
+#           (labeled "u:object_r:vendor_file:s0") has incorrect label or no domain
+#           transition from u:r:init:s0 to another SELinux domain defined.
+#
+# This is the ONE exception to the "do not port Motorola HALs with no client"
+# rule recorded in UNLABELLED-SERVICES.md: a client is being written.
+#
+# THREE HALVES ARE REQUIRED, not two. Label + domain is not enough:
+#   1. sepolicy/vendor/file_contexts       -- stock's line, verbatim
+#   2. this file                           -- stock's vendor_sepolicy.cil rules
+#   3. the VINTF manifest fragment         -- vendor/etc/vintf/manifest/
+#      motorola.hardware.wireless.powershare.xml, restored to
+#      proprietary-files.txt in the same change.
+# (3) is not optional and is not cosmetic. The service binary registers through
+# motorola.hardware.wireless.powershare-V2-ndk.so, whose BnMotPowerShare ctor
+# calls AIBinder_markVintfStability (verified: `nm -D` on the lib shows
+# AIBinder_markVintfStability@LIBBINDER_NDK30 undefined). servicemanager's
+# ServiceManager::add() runs meetsDeclarationRequirements() on any VINTF-stable
+# binder and REJECTS the addService when the name is absent from the device
+# manifest. Without the fragment the process would start, get an error from
+# AServiceManager_addService and serve nothing -- a strictly worse failure than
+# today's, because init would report the service as running.
+
+type hal_motpowershare_default, domain;
+type hal_motpowershare_default_exec, exec_type, vendor_file_type, file_type;
+
+init_daemon_domain(hal_motpowershare_default)
+
+# Register IMotPowerShare/default. Stock:
+#   (allow hal_motpowershare_server servicemanager_34_0 (binder (call transfer)))
+#   (allow hal_motpowershare_server hal_motpowershare_aidl_service
+#          (service_manager (add find)))
+binder_use(hal_motpowershare_default)
+add_service(hal_motpowershare_default, vendor_hal_motpowershare_service)
+
+# NOT PORTED: stock's hal_motpowershare_hwservice grant and its
+# hidl_base_hwservice add. Stock keeps them for the @1.0/@2.0 HIDL variants of
+# this HAL (vendor_file_contexts labels three binaries with this same exec type);
+# we ship only the AIDL one, which never touches hwservicemanager. Declaring a
+# hwservice type nothing registers would be the same "manifest entry is a
+# promise, not a service" mistake this tree has already paid for twice.
+
+# --- what the binary actually opens -----------------------------------------
+# MEASURED, from `strings` on the shipped blob:
+#   /sys/class/power_supply/wireless/online
+#   /sys/class/power_supply/wireless/device/{tx_mode,rx_connected,rx_dev_id,
+#       rx_dev_type,rx_dev_manufacturing,folio_mode,pen_control,pen_error,
+#       pen_mac,pen_soc,pen_status}
+# and nothing else outside /system/bin/linker64.
+#
+# The five pen_* nodes DO NOT EXIST on arcfox (measured: `ls` on
+# .../soc:qcom,pmic_glink:qcom,battery_charger lists folio_mode, rx_connected,
+# rx_dev_id, rx_dev_manufacturing, rx_dev_type, tx_mode, tx_mode_vout,
+# wlc_*, wls_* and nothing named pen_*). They belong to the moto stylus dock.
+# The HAL will get ENOENT there, which is the same answer stock gets.
+#
+# Path walk, and why three different types appear below:
+#   /sys/class/power_supply            sysfs_batteryinfo   (AOSP genfscon)
+#   .../wireless                       symlink in that dir
+#     -> .../battery_charger/power_supply/wireless
+#                                      vendor_sysfs_usb_supply
+#                                      (sepolicy_vndr/sm8650/.../genfs_contexts)
+#   .../wireless/device                symlink
+#     -> .../soc:qcom,pmic_glink:qcom,battery_charger
+#                                      plain sysfs -- MEASURED on the device:
+#                                      `ls -Zd` returns u:object_r:sysfs:s0
+#   .../battery_charger/<attr>         plain sysfs, inherited
+allow hal_motpowershare_default sysfs_batteryinfo:dir r_dir_perms;
+allow hal_motpowershare_default sysfs_batteryinfo:lnk_file r_file_perms;
+allow hal_motpowershare_default vendor_sysfs_usb_supply:dir r_dir_perms;
+allow hal_motpowershare_default vendor_sysfs_usb_supply:lnk_file r_file_perms;
+allow hal_motpowershare_default vendor_sysfs_usb_supply:file rw_file_perms;
+allow hal_motpowershare_default vendor_sysfs_battery_supply:dir r_dir_perms;
+allow hal_motpowershare_default vendor_sysfs_battery_supply:file rw_file_perms;
+
+# DELIBERATELY NOT sysfs_wls_dev, which is what stock uses for the tx_mode /
+# rx_* / pen_* / folio_mode attributes.
+#
+# Porting stock's type would mean ~16 genfscon lines that RELABEL nodes which
+# are u:object_r:sysfs:s0 on this device today -- and init_wls (init.mmi.wls.sh)
+# already reaches exactly those nodes through `allow init_wls sysfs:file
+# { getattr setattr }`, which is what hands tx_mode and the wlc_* controls to
+# system:system so the framework can drive reverse wireless charging at all.
+# See the long note in init_wls.te: a relabel REMOVES access from every existing
+# reader, and the one existing reader here is the script that this whole feature
+# depends on. That trade is not worth taking on a change that cannot be boot-
+# tested before it lands. This grant is strictly additive and cannot regress
+# anything; narrowing it to sysfs_wls_dev is a follow-up for a boot cycle where
+# init_wls can be re-verified.
+allow hal_motpowershare_default sysfs:dir r_dir_perms;
+allow hal_motpowershare_default sysfs:lnk_file r_file_perms;
+allow hal_motpowershare_default sysfs:file rw_file_perms;
+
+# Stock's dumpstate plumbing (vendor_sepolicy.cil:11607-11609, 11889-11890).
+# dumpstate runs the HAL's dump() over binder and reads the reply through a
+# pipe it owns.
+binder_call(dumpstate, hal_motpowershare_default)
+allow hal_motpowershare_default dumpstate:fifo_file write;
+
+# The client. Stock: (typeattributeset hal_motpowershare_client (system_server_34_0)).
+# system_server must be able to look the service up and call into it; the HAL
+# calls back on IMotPowerShareCallback, which is a binder call in the other
+# direction, hence both halves of binder_call.
+allow system_server vendor_hal_motpowershare_service:service_manager find;
+binder_call(system_server, hal_motpowershare_default)
+binder_call(hal_motpowershare_default, system_server)

@@ -55,6 +55,7 @@ allow mmi_boot utags_block_device:blk_file rw_file_perms;
 # /proc/cpuinfo (hw revision), /proc/bootinfo (BOOT_SEQ, Last boot reason) and
 # /proc/cmdline (the "@:" debug key/value pairs, non-release builds only).
 #
+# SUPERSEDED (see file.te and the grant at the end of this file).
 # NOT DECLARED: proc_bootinfo. Stock has a type for /proc/bootinfo and a
 # genfscon for it, but stock ALSO grants mmi_boot plain `proc:file read`, which
 # already covers /proc/bootinfo -- it is u:object_r:proc:s0 on this device.
@@ -95,3 +96,8 @@ set_prop(mmi_boot, vendor_mot_init_prop)
 # ro.boot.last_powerup_reason decides coldboot vs. the /proc/bootinfo reason.
 get_prop(mmi_boot, build_prop)
 get_prop(mmi_boot, bootloader_prop)
+
+# /proc/bootinfo now carries its own type (see file.te). This domain reached it
+# through its broad `proc:file` grant before, so this only preserves what it
+# already had.
+allow mmi_boot proc_bootinfo:file r_file_perms;

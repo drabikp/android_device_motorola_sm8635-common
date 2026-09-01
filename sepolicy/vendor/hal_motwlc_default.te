@@ -1,0 +1,60 @@
+# motorola.hardware.wireless.wlc-service -- the Motorola wireless CHARGER
+# accessory interface (IMotWlc): fan speed, dock light control, and the
+# transmitter identity/capability read out of the pad the phone is sitting on.
+#
+# Ported 2026-09-01 alongside hal_motpowershare_default, for the same reason and
+# with the same three-part requirement (file_contexts line, this domain, and the
+# restored VINTF fragment vendor/etc/vintf/manifest/motorola.hardware.wireless.wlc.xml
+# -- see the note in hal_motpowershare_default.te for why the fragment is
+# load-bearing rather than cosmetic; this binary is VINTF-stable through
+# motorola.hardware.wireless.wlc-V1-ndk.so in exactly the same way).
+#
+# Before this change, every boot:
+#   E init: Could not start service 'vendor.mot.wlc-hal' as part of class 'hal':
+#           File /vendor/bin/hw/motorola.hardware.wireless.wlc-service (labeled
+#           "u:object_r:vendor_file:s0") has incorrect label or no domain
+#           transition from u:r:init:s0 to another SELinux domain defined.
+
+type hal_motwlc_default, domain;
+type hal_motwlc_default_exec, exec_type, vendor_file_type, file_type;
+
+init_daemon_domain(hal_motwlc_default)
+
+binder_use(hal_motwlc_default)
+add_service(hal_motwlc_default, vendor_hal_motwlc_service)
+
+# NOT PORTED: stock's hal_motwlc_hwservice / hidl_base_hwservice grants. Same
+# reason as powershare -- stock keeps a @1.0 and @2.0 HIDL variant of this HAL
+# (three exec entries in vendor_file_contexts); we ship only the AIDL binary.
+
+# --- what the binary actually opens -----------------------------------------
+# MEASURED, from `strings` on the shipped blob -- nine nodes, all under
+# /sys/class/power_supply/wireless/device/ :
+#   wlc_fan_speed  wlc_light_ctl  wlc_set_mode  wlc_st_changed
+#   wlc_tx_capability  wlc_tx_id  wlc_tx_power  wlc_tx_sn  wlc_tx_type
+#
+# wlc_set_mode DOES NOT EXIST on arcfox (measured: it is absent from the
+# battery_charger attribute list, while the other eight are present). The HAL
+# gets ENOENT for it, as stock does.
+#
+# See hal_motpowershare_default.te for the path walk and for why these are
+# reached as plain `sysfs` rather than stock's sysfs_wls_dev.
+allow hal_motwlc_default sysfs_batteryinfo:dir r_dir_perms;
+allow hal_motwlc_default sysfs_batteryinfo:lnk_file r_file_perms;
+allow hal_motwlc_default vendor_sysfs_usb_supply:dir r_dir_perms;
+allow hal_motwlc_default vendor_sysfs_usb_supply:lnk_file r_file_perms;
+allow hal_motwlc_default vendor_sysfs_usb_supply:file rw_file_perms;
+allow hal_motwlc_default vendor_sysfs_battery_supply:dir r_dir_perms;
+allow hal_motwlc_default vendor_sysfs_battery_supply:file rw_file_perms;
+allow hal_motwlc_default sysfs:dir r_dir_perms;
+allow hal_motwlc_default sysfs:lnk_file r_file_perms;
+allow hal_motwlc_default sysfs:file rw_file_perms;
+
+# Stock's dumpstate plumbing (vendor_sepolicy.cil:15090-15092, 15123-15124).
+binder_call(dumpstate, hal_motwlc_default)
+allow hal_motwlc_default dumpstate:fifo_file write;
+
+# Stock: (typeattributeset hal_motwlc_client (system_server_34_0)).
+allow system_server vendor_hal_motwlc_service:service_manager find;
+binder_call(system_server, hal_motwlc_default)
+binder_call(hal_motwlc_default, system_server)

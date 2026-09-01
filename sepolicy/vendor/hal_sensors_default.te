@@ -36,3 +36,112 @@ allow hal_sensors_default uhid_device:chr_file rw_file_perms;
 # `set` as well as `get` because that is what stock gives it
 # (vendor_sepolicy.cil:14108-14109), not because a write was observed here.
 set_prop(hal_sensors_default, vendor_camera_ledtorchmode_prop)
+
+
+# ---------------------------------------------------------------------------
+# THE Motorola sensors_class ENUMERATION -- 140 denials per boot (130 file
+# reads + 10 dir reads), all in one burst at HAL start:
+#
+# ⚠️ COUNT CORRECTED 2026-09-01, measured on the shipping build rather than
+# estimated: exactly 140 distinct audit serials, 130 tclass=file + 10 tclass=dir,
+# the whole burst spanning 4 ms at HAL start. That matches the arithmetic below
+# exactly -- 13 attributes x 10 devices + the 10 parent directories = 140. The
+# earlier "142 (132 file + 10 dir)" never agreed with its own breakdown.
+#
+#   avc: denied { read } for name="max_range"/"resolution"/"sensor_power"/
+#        "poll_delay"/"min_delay"/"max_delay"/"flags"/"fifo_max_event_count"/
+#        "fifo_reserved_event_count"/"name"/"vendor"/"version"/"type"
+#        dev="sysfs" scontext=u:r:hal_sensors_default:s0
+#        tcontext=u:object_r:sysfs:s0 tclass=file
+#   avc: denied { read } for name="input4".."input13" dir (same contexts)
+#
+# 13 attributes x 10 devices + the 10 parent directories. Located on the live
+# device: /sys/class/sensors is already u:object_r:vendor_sysfs_sensors:s0, but
+# its entries are symlinks into the input tree, and the real directories are
+#
+#   /sys/devices/virtual/input/input{4..13}/<sensor name>/
+#
+# with names "Moto CapSense Ch0".."Ch6", "Moto_Top_Approach_Det", "dt-gesture"
+# and "s-dt-gesture" -- ten of them, matching the ten denied parents exactly.
+#
+# WHY A GRANT AND NOT genfscon. Two independent blockers:
+#   1. genfs_contexts entries are whitespace-separated, and seven of the ten
+#      directory names contain SPACES. There is no way to spell
+#      ".../input4/Moto CapSense Ch1" in that file at all.
+#   2. The inputN index is assigned at driver probe, so a per-device prefix is
+#      no more stable than the i2c bus numbering documented in genfs_contexts.
+# Stock solves it with a subtree label -- (genfscon sysfs "/devices/virtual/input"
+# (u object_r sysfs_input)) at vendor_sepolicy.cil:444, plus
+# `allow hal_sensors sysfs_input {dir file lnk_file}` -- but sysfs_input is a
+# Motorola type that exists in neither AOSP nor QCOM's sepolicy_vndr here, and
+# adopting it would relabel EVERY virtual input device, including the uinput
+# nodes the fold logic depends on and the dt-gesture nodes vendor_init writes.
+# That is a change whose blast radius cannot be checked without a flash; a
+# read-only grant on the generic type has none.
+#
+# COSMETIC. Verified live: `dumpsys sensorservice` lists 68 hardware sensors, all
+# running, including Hinge Angle, Hinge Posture, Flip Position, Flip Hall Effect
+# and both Flip Approach/Presence. The denied nodes are the SAR capsense
+# channels' sysfs description, not the sensor data path.
+# ⚠️ DISABLED 2026-09-01 -- CONFIRMED BY EXPERIMENT. Keep them disabled.
+#
+# After these three grants landed, double-tap-to-wake stopped waking the phone on
+# BOTH panels. Measured at that point: the touch driver still DETECTS the gesture
+# (ts_mmi_gesture_handler logs "double tap; x=,y=" and the input device's ABS_X/
+# ABS_Y update to exactly those coordinates), but `getevent -c 1` on
+# /dev/input/event12 blocks forever -- NOT ONE event packet reaches an evdev
+# client, so no KEYCODE_WAKEUP is ever generated.
+#
+# Hypothesis: these grants let the sensor stack finish enumerating and CLAIM the
+# gesture evdev nodes. `dumpsys sensorservice` now lists them as sensors --
+#   0x01000007 dt-gesture    com.motorola.sensor.double_tap
+#   0x0100000a s-dt-gesture  com.motorola.sensor.double_tap
+# -- and motorola.hardware.sensorext-service is running. A grabbed device
+# delivers to nobody else, which matches the measurement exactly.
+#
+# This is the LOAD-BEARING DENIAL pattern: the denial was doing useful work, and
+# removing it unblocked a path we did not want. Same shape as the thermal-engine
+# proc_pid_max case earlier today.
+#
+# RESULT: with these three lines commented out, the dt-gesture/s-dt-gesture
+# sensors DISAPPEAR from `dumpsys sensorservice` and double-tap-to-wake WORKS
+# again on both panels (operator-confirmed). Causation is proven, both directions.
+#
+# DECISION: leave them disabled. The trade is explicit --
+#   cost: 140 denials/boot return -- measured 2026-09-01, not estimated; the
+#         earlier "~118" here was a guess. They are COSMETIC (see the note
+#         above: the denied nodes are the SAR capsense channels' sysfs
+#         DESCRIPTION, not the sensor data path).
+#         ⚠️ Do not quote the sensor counts that used to sit on this line.
+#         "68" and "92" have both been written down in this tree and neither was
+#         reproducible. Measured on the shipping grants-off build,
+#         `dumpsys sensorservice` lists 79 sensors (101 on the stock capture in
+#         workspace/contract/open/sensorservice.txt). That gap is a separate
+#         question and is NOT evidence about this trade either way.
+#   gain: a real, user-facing feature works.
+# Log noise never outranks a working feature.
+#
+# ⚠️ DO NOT "fix" these denials again without re-testing double-tap-to-wake.
+# That is the whole point of this comment.
+#
+# A narrower grant is not available: the capsense nodes cannot be spelled in
+# genfs_contexts (seven of ten directory names contain SPACES, and inputN is
+# assigned at probe), which is why the grant had to be on the generic sysfs type
+# and therefore also covered the gesture nodes.
+#
+# If someone later wants BOTH, the durable route is to stop fighting for the evdev
+# node and consume the com.motorola.sensor.double_tap SENSOR instead -- which is
+# how stock does it, and is immune to who owns the input device.
+#
+# allow hal_sensors_default sysfs:dir r_dir_perms;
+# allow hal_sensors_default sysfs:file r_file_perms;
+# allow hal_sensors_default sysfs:lnk_file r_file_perms;
+
+# NOT FIXABLE: hal_sensors_default reads sys.boot_completed
+#   avc: denied { read } for name="u:object_r:boot_status_prop:s0"
+#        tcontext=u:object_r:boot_status_prop:s0
+# boot_status_prop is system_restricted_prop (public/property.te:60). A
+# `restricted` type only neverallows coredomain WRITES, so get_prop() from a
+# vendor domain would in principle build -- but AOSP deliberately keeps this one
+# core-only and the HAL works without it (it is a "wait for boot" convenience).
+# Left alone rather than widened; 2 denials per boot.
