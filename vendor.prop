@@ -200,11 +200,22 @@ persist.vendor.cne.feature=1
 # differently here than it does on stock.
 ro.vendor.use_data_netmgrd=true
 
-# NOT fixed by any of the above, and NOT fixable by shipping a blob: vendor_cnd
-# retries `vendor.qti.data.nwmgr.INwMgr` as a lazy service ~5x/second forever.
-# Nothing in the entire stock firmware SERVES that interface -- only libcne.so
-# and vendor.libdpmframework.so reference it, plus the vndservice_contexts label.
-# Same shape as vendor.dpmd below: stock churns identically.
+# NOT fixed by any of the above, and NOT fixable: /vendor/bin/cnd (libcne.so,
+# NwMgrClient) calls getService on `vendor.qti.data.nwmgr.INwMgr` at 1 Hz forever.
+#
+# CORRECTION (2026-09-01, measured): an earlier version of this comment said
+# "Nothing in the entire stock firmware SERVES that interface". That is WRONG.
+# The server DOES exist -- NwMgrService / NwMgrServiceImpl live in
+# /vendor/lib64/vendor.libdpmframework.so. It is unreachable for a different
+# reason: the ONLY binary in the tree that loads that library is
+# /vendor/bin/vendor.dpmd, and vendor.dpmd can never link (UND
+# android::hardware::Parcel::setData, exported by NO libhidlbase in the stock
+# dump -- see the dpm note below). So stock churns identically, but because the
+# server's host cannot start, not because no server was ever written.
+#
+# Do NOT drop cnd to silence this: CNE is working (mwqemadapter registered,
+# CneApp/DataCallAgent running). Removing it would trade log noise for a real
+# data/IWLAN regression.
 
 persist.vendor.dpm.feature=1
 # Stock sets this to 11 (vendor/build.prop:432), which trips the

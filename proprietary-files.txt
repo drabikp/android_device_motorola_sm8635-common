@@ -1053,10 +1053,8 @@ vendor/bin/hw/vendor.zuialarm.hardware.alarm@1.0-service
 vendor/bin/hw/vendor.zui.hardware.ifaa@1.0-service
 vendor/etc/init/android.hardware.biometrics.face-service.face.rc
 vendor/etc/init/android.hardware.drm@1.1-service.wfdhdcp.rc
-vendor/etc/init/cas-default.rc
 vendor/etc/init/com.qualcomm.qti.wifidisplayhal@1.0-service.rc
 vendor/etc/init/dcfd.rc
-vendor/etc/init/dms-service.rc
 vendor/etc/init/fingerprint-fpc.rc
 # vendor/etc/init/hostapd.android.rc removed with the hostapd blob -- the
 # source-built binary ships its own copy of this rc.
@@ -1065,10 +1063,7 @@ vendor/etc/init/init.qccvendor.rc
 vendor/etc/init/init.qti.fm.rc
 vendor/etc/init/init.qti.graphics.rc
 vendor/etc/init/init.qti.qcv.rc
-vendor/etc/init/init.thermalstatus.rc
 vendor/etc/init/init.zuipoweroffalarm.rc
-vendor/etc/init/motorola.hardware.fdr.service.rc
-vendor/etc/init/motorola.hardware.health.service.rc
 vendor/etc/init/motorola.hardware.health.storage.service.rc
 vendor/etc/init/nfc-service-st.rc
 vendor/etc/init/qmipriod.debug.rc
@@ -1096,10 +1091,8 @@ vendor/etc/vintf/manifest/android.hardware.radio.voice.xml
 vendor/etc/vintf/manifest/android.hardware.secure_element.xml
 vendor/etc/vintf/manifest/atfwd-saidl.xml
 vendor/etc/vintf/manifest/bttpi-saidl.xml
-vendor/etc/vintf/manifest/com.motorola.thermalstatus.xml
 vendor/etc/vintf/manifest/datafactoryservice-saidl.xml
 vendor/etc/vintf/manifest/deviceinfo-saidl.xml
-vendor/etc/vintf/manifest/dms-service.xml
 vendor/etc/vintf/manifest/dpm-saidl.xml
 # vendor/etc/vintf/manifest/face-default_3.xml -- DROPPED. Replaced by our own
 # vintf/android.hardware.biometrics.face-arcfox.xml: the blob here had been
@@ -1109,16 +1102,27 @@ vendor/etc/vintf/manifest/imsdcservice-saidl.xml
 vendor/etc/vintf/manifest/ImsRtpService-aidl.xml
 vendor/etc/vintf/manifest/manifest_identity_credential.xml
 vendor/etc/vintf/manifest/manifest_non_qmaa_extn.xml
-vendor/etc/vintf/manifest/motorola.hardware.fdr.service.xml
-vendor/etc/vintf/manifest/motorola.hardware.health.service.xml
-vendor/etc/vintf/manifest/motorola.hardware.health.storage.service.xml
-vendor/etc/vintf/manifest/motorola.hardware.wireless.powershare.xml
-vendor/etc/vintf/manifest/motorola.hardware.wireless.wlc.xml
 vendor/etc/vintf/manifest/mwqem-saidl.xml
 vendor/etc/vintf/manifest/qcrilhook-saidl.xml
 vendor/etc/vintf/manifest/qms-saidl.xml
 vendor/etc/vintf/manifest/secure_element-service.xml
 vendor/etc/vintf/manifest/vendor.arcsoft.hardware.camera.postproc.xml
+
+# --- RESTORED 2026-09-01: the two wireless-charging HAL fragments -------------
+# These two were dropped with the other ten declared-but-absent fragments (see
+# the block further down). They come BACK because their servers are now labelled
+# and will start: sepolicy/vendor/{file_contexts,hal_motpowershare_default.te,
+# hal_motwlc_default.te,service.te,service_contexts}.
+#
+# They are NOT optional decoration. Both binaries register through
+# motorola.hardware.wireless.{powershare-V2,wlc-V1}-ndk.so, whose Bn* constructor
+# calls AIBinder_markVintfStability (verified with `nm -D` on both libs).
+# servicemanager runs meetsDeclarationRequirements() on a VINTF-stable binder and
+# REJECTS addService for any name absent from the device manifest -- so without
+# these two files the HALs would start, fail to register, and look healthier in
+# `init.svc.*` than they actually are. Label + domain + fragment, or none of it.
+vendor/etc/vintf/manifest/motorola.hardware.wireless.powershare.xml
+vendor/etc/vintf/manifest/motorola.hardware.wireless.wlc.xml
 # THE DOLBY CODEC2 STORES ARE DELIBERATELY GONE. THIS IS THE CAMERA FIX.
 #
 # These two fragments were the ONLY thing on the whole device that declared
@@ -1200,7 +1204,6 @@ vendor/etc/vintf/manifest/vendor.arcsoft.hardware.camera.postproc.xml
 # contribute nothing and cost nothing. The Dolby DMS audio-effects service
 # (vendor.dolby.dms.service and its libs) is untouched too -- it declares no
 # IComponentStore instance and is not part of this bug.
-vendor/etc/vintf/manifest/vendor.motorola.hardware.sxf.service.xml
 vendor/etc/vintf/manifest/vendor.qti.camera.aon-impl.xml
 vendor/etc/vintf/manifest/vendor.qti.camera.offlinecamera-impl.xml
 vendor/etc/vintf/manifest/vendor.qti.camera.postproc-impl.xml
@@ -1659,7 +1662,6 @@ vendor/bin/pstore_annotate.sh
 vendor/bin/qca6234-service.sh
 vendor/bin/qcc-vendor;DISABLE_CHECKELF
 vendor/bin/qconfigfunctest
-vendor/bin/qesdk-secmanager
 vendor/bin/qguard
 vendor/bin/qsap_dcfd
 vendor/bin/qsap_location
@@ -2386,7 +2388,6 @@ vendor/etc/seccomp_policy/gnss@2.0-edgnss-daemon.policy
 vendor/etc/seccomp_policy/gnss@2.0-qsap-location.policy
 vendor/etc/seccomp_policy/gnss@2.0-xtra-daemon.policy
 vendor/etc/seccomp_policy/gnss@2.0-xtwifi-client.policy
-vendor/etc/seccomp_policy/qesdksec.policy
 vendor/etc/seccomp_policy/qms.policy
 vendor/etc/seccomp_policy/qsap_dcfd.policy
 vendor/etc/seccomp_policy/qsap_qapeservice.policy
@@ -2587,8 +2588,90 @@ vendor/etc/init/hw/init.vendor.st21nfc.rc
 # including android.hardware.boot-service.qti (boot-control, mandatory on A/B)
 # and the gatekeeper/keymint/weaver chain needed for /data encryption.
 # Added by add-missing-hals.sh.
+
+# --- DEAD .rc FILES DROPPED 2026-09-01 ---------------------------------------
+# Twelve init .rc blobs were removed from this list (and four more from
+# device/motorola/arcfox/proprietary-files.txt). Every one of them declared a
+# service that could not start on a single boot of this ROM. Two distinct
+# causes, and the fix is the same for both -- stop shipping the .rc.
+#
+# CAUSE 1 -- the server binary carries the generic u:object_r:vendor_file:s0, so
+# init refuses the domain transition:
+#
+#   E init: Could not start service 'vendor.mot.fdr-hal' as part of class 'hal':
+#           File /vendor/bin/hw/motorola.hardware.fdr-service (labeled
+#           "u:object_r:vendor_file:s0") has incorrect label or no domain
+#           transition from u:r:init:s0 to another SELinux domain defined.
+#
+# Labelling them was considered and rejected. MEASURED over a full cold boot
+# plus 25 minutes of steady state, then RE-MEASURED 2026-09-01 against a fresh
+# boot log and a live logcat: nothing on this device looks up any
+# motorola.* / com.motorola.* / vendor.zui* interface, with exactly ONE
+# exception (motorola.hardware.camera.desktop@2.0::ICameraDesktop, requested
+# twice per boot by libmot_chi_desktop_helper.so inside the camera provider --
+# see the manifest_cliffs.xml note further down; the provider handles the null
+# and the camera works). LineageOS ships none of the Motorola framework
+# components that would bind these interfaces, so labelling them would start
+# thirteen daemons with no clients. The two EXCEPTIONS that were labelled
+# instead are powershare and wlc -- a client is being written for those.
+#
+# Dropped for cause 1, with the service name init was failing on:
+#   android.hardware.biometrics.face@1.0-service.face.rc  vendor.face-default
+#       (superseded: our AIDL face HAL, android.hardware.biometrics.face-service.face,
+#        starts and serves IFace/default. This is the dead HIDL predecessor.)
+#   diagcommd.rc                                          vendor.diagcommd
+#       (stock has NO file_contexts entry for /vendor/bin/diagcommd either --
+#        it cannot start on stock, so this is stock parity, not a port defect)
+#   init.thermalstatus.rc                                 vendor.thermalstatus
+#   motorola.hardware.camera.desktop@2.0-service.rc       vendor.mot.camera.desktop-hal-2-0
+#   motorola.hardware.fdr.service.rc                      vendor.mot.fdr-hal
+#   motorola.hardware.health.service.rc                   vendor.mot.health-hal-aidl
+#       (AOSP's android.hardware.health-service.qti serves IHealth/default and
+#        `dumpsys battery` is correct, so nothing is lost)
+#   motorola.hardware.input@1.1-service.rc                vendor.mot.input-hal-1-1
+#   motorola.hardware.vibrator@1.0-service.rc             vendor.mot.vibrator-hal-1-0
+#       (haptics already work through the QTI vibrator service)
+#   motosxf.rc                                            vendor.motosxf
+#   vendor.zui.hardware.ifaa@1.0-service.rc               ifaa-1-0
+#       (Alipay/IFAA auth, Chinese market, irrelevant on a reteu unit)
+#   vendor.zuialarm.hardware.alarm@1.0-service.rc         zui-alarm-hal-1-0
+# and from the arcfox list:
+#   com.motorola.hardware.display.panel-service.rc        panel-aidl-service
+#   com.motorola.hardware.display.touch-service.rc        vendor.mot.touch-hal
+#   com.motorola.hardware.display.touch@1.2-service.rc    vendor.mot.touch-hal-1-2
+#   motorola.hardware.camera.imgtuner.aidl-service.rc     imgtuner-hal
+#
+# THE BINARIES AND THEIR INTERFACE LIBS STAY SHIPPED, deliberately, exactly as
+# with the Dolby cluster below: with no .rc nothing starts them, so they are
+# inert, and pulling a binary means also pulling its PRODUCT_PACKAGES line and
+# its Android.bp module or the build dies with "includes non-existent modules in
+# PRODUCT_PACKAGES". Removing the cluster is a clean follow-up, not a blocker.
+#
+# CAUSE 2 -- cas-default.rc, and this one was a REAL DEFECT, not log noise.
+# We ship /vendor/apex/com.android.hardware.cas.apex, which contains its own
+# binary (/apex/com.android.hardware.cas/bin/hw/android.hardware.cas-service.example),
+# its own cas-default.rc pointing at that path, and its own VINTF fragment
+# declaring android.hardware.cas.IMediaCasService/default. The stock blob
+# /vendor/etc/init/cas-default.rc names the OLD non-apex path, which this ROM
+# does not install, and init parses /vendor before /apex:
+#
+#   I apexd: Found pre-installed APEX /vendor/apex/com.android.hardware.cas.apex
+#   I init : Parsing file /apex/com.android.hardware.cas/etc/cas-default.rc...
+#   E init : /apex/com.android.hardware.cas/etc/cas-default.rc: 2: Interface
+#            'aidl/android.hardware.cas.IMediaCasService/default' redefined in
+#            vendor.cas-default but is already defined by vendor.cas-default
+#   E init : Could not start service 'vendor.cas-default' ... Cannot find
+#            '/vendor/bin/hw/android.hardware.cas-service.example'
+#
+# So the blob's definition WINS and the apex's working one is rejected as a
+# duplicate. Result, MEASURED with `vintf dm` and `service list`:
+# android.hardware.cas.IMediaCasService/default is DECLARED in the device
+# manifest and SERVED BY NOBODY -- the declared-but-absent trap that hung
+# mediaserver over the Dolby c2 stores. Dropping the blob lets the apex's rc
+# parse and the apex's binary run. CONFIRMED on the shipping build 2026-09-01:
+# `service list` shows android.hardware.cas.IMediaCasService/default registered,
+# and `dumpsys -l` lists it -- declared AND served.
 vendor/etc/init/android.hardware.audio.service_64.rc
-vendor/etc/init/android.hardware.biometrics.face@1.0-service.face.rc
 vendor/etc/init/android.hardware.bluetooth@1.1-service-qti.rc
 vendor/etc/init/android.hardware.gatekeeper-service-qti.rc
 vendor/etc/init/android.hardware.gnss-aidl-service-qti.rc
@@ -2598,7 +2681,6 @@ vendor/etc/init/android.hardware.secure_element-service.qti.rc
 vendor/etc/init/android.hardware.security.keymint-service-qti.rc
 vendor/etc/init/android.hardware.thermal-service.qti.rc
 vendor/etc/init/cnd.rc
-vendor/etc/init/diagcommd.rc
 vendor/etc/init/dlsc.rc
 vendor/etc/init/dpmQmiMgr.rc
 vendor/etc/init/ese_upgrade.rc
@@ -2607,18 +2689,13 @@ vendor/etc/init/ims-dataservice-daemon.rc
 vendor/etc/init/ims_rtp_daemon.rc
 vendor/etc/init/ipacm-diag.rc
 vendor/etc/init/ipacm.rc
-vendor/etc/init/motorola.hardware.camera.desktop@2.0-service.rc
-vendor/etc/init/motorola.hardware.input@1.1-service.rc
-vendor/etc/init/motorola.hardware.vibrator@1.0-service.rc
 vendor/etc/init/motorola.hardware.wireless.powershare-service.rc
 vendor/etc/init/motorola.hardware.wireless.wlc-service.rc
-vendor/etc/init/motosxf.rc
 vendor/etc/init/nicmd.rc
 vendor/etc/init/port-bridge.rc
 vendor/etc/init/qcrilNrd.rc
 vendor/etc/init/qdcmss.rc
 vendor/etc/init/qesdk-manager.rc
-vendor/etc/init/qesdk-secmanager.rc
 vendor/etc/init/qguard.rc
 vendor/etc/init/qmipriod.rc
 vendor/etc/init/qms.rc
@@ -2648,15 +2725,12 @@ vendor/etc/init/vendor.qti.hardware.soter-service.rc
 vendor/etc/init/vendor.qti.media.c2audio@1.0-service.rc
 vendor/etc/init/vendor.qti.media.c2@1.0-service.rc
 vendor/etc/init/vendor.qti.qspmhal-service.rc
-vendor/etc/init/vendor.zuialarm.hardware.alarm@1.0-service.rc
-vendor/etc/init/vendor.zui.hardware.ifaa@1.0-service.rc
 vendor/etc/init/vmmgr.rc
 vendor/etc/init/vppservice.rc
 vendor/etc/init/wfdvndservice.rc
 vendor/etc/vintf/manifest/android.hardware.gnss-aidl-service-qti.xml
 vendor/etc/vintf/manifest/android.hardware.security.keymint-service-qti.xml
 vendor/etc/vintf/manifest/android.hardware.thermal-service.qti.xml
-vendor/etc/vintf/manifest/motorola.hardware.input@1.1-service.xml
 vendor/etc/vintf/manifest/qesdk-manager.xml
 vendor/etc/vintf/manifest/vendor.qti.gnss-service.xml
 vendor/etc/vintf/manifest/vendor.qti.hardware.lights.service.xml
@@ -2665,7 +2739,6 @@ vendor/etc/vintf/manifest/vendor.qti.hardware.secureprocessor.xml
 vendor/etc/vintf/manifest/vendor.qti.hardware.servicetrackeraidl-service.xml
 vendor/etc/vintf/manifest/vendor.qti.hardware.soter-service.xml
 vendor/etc/vintf/manifest/vendor.qti.qspmhal-service.xml
-vendor/etc/vintf/manifest/vendor.zuialarm.hardware.alarm@1.0-service.xml
 
 # VINTF manifests for HALs we ship. These were briefly excluded as
 # 'installed twice', but nothing else provides them -- without a manifest the
@@ -2869,3 +2942,86 @@ vendor/lib64/vendor.qti.qspmhal-V1-ndk.so
 # installs, which is all qcrilNrd needs to resolve ASensorManager_getCurInstance.
 vendor/lib64/libsensorndkbridge.so;DISABLE_DEPS
 
+# --- QESDK SECURITY MANAGER: DROPPED (2026-08-31) ------------------------------
+# /vendor/bin/qesdk-secmanager calls AServiceManager_waitForService on
+# `vendor.qti.qesdsys.IQesdSys/default`. That interface is served on stock by
+# /system_ext/app/FrameworksUtilsSysService/FrameworksUtilsSysService.apk (a QTI
+# "noship" enterprise-SDK system service declared in
+# system_ext/etc/vintf/manifest/vendor.qti.qesdsys.service.xml). LineageOS does
+# not ship that apk, so waitForService never returns and servicemanager retries
+# the lazy-start at 1 Hz forever -- MEASURED at exactly 1/s, 1484 init errors in
+# a 25-minute window, i.e. ~half of every `E init` line this device emits.
+# The daemon is dead weight without the system service: it only relays
+# /dev/socket/qesdsec requests to IQesdSys. qesdk-manager handles the missing
+# socket gracefully ("Failed to connect to QesdSecurity manager", no retry loop)
+# and keeps serving vendor.qti.qesdhalaidl.IQesdhal/default, which IS registered
+# and IS in the device framework matrix -- so qesdk-manager stays.
+# libqti-qesdk-secure.so stays too: libapengine/libqapesdk (location + perf
+# QESDK plugins) link it.
+#   vendor/bin/qesdk-secmanager
+#   vendor/etc/init/qesdk-secmanager.rc
+#   vendor/etc/seccomp_policy/qesdksec.policy
+
+# arcfox: the following VINTF manifest fragments were REMOVED. Each declared an
+# AIDL/HIDL interface that NO process on this build can serve -- their server
+# binaries carry the generic u:object_r:vendor_file:s0 label so init never starts
+# them, and measurement over a full boot plus 25 min of steady state showed ZERO
+# requests for any of them from anything on the device. Every corresponding entry
+# in device_framework_matrix.xml is optional="true" (verified), so checkvintf does
+# not regress. Declaring a HAL we cannot serve is the declared-but-absent trap.
+# Removed: com.motorola.hardware.display.panel-service.xml, com.motorola.hardware.display.touch.xml, com.motorola.thermalstatus.xml, motorola.hardware.fdr.service.xml, motorola.hardware.health.service.xml, motorola.hardware.health.storage.service.xml, vendor.motorola.hardware.sxf.service.xml, motorola.hardware.wireless.powershare.xml, motorola.hardware.wireless.wlc.xml, dms-service.xml, motorola.hardware.input@1.1-service.xml, motorola.hardware.camera.imgtuner.aidl.xml
+#
+# 2026-09-01 AMENDMENT: motorola.hardware.wireless.powershare.xml and
+# motorola.hardware.wireless.wlc.xml were RESTORED (see the block under
+# vendor/etc/vintf/manifest/). Their servers are labelled now and do start, so
+# the declarations are true again. The other ten stay gone.
+#
+# ALSO REMOVED 2026-09-01: vendor/etc/vintf/manifest/
+# vendor.zuialarm.hardware.alarm@1.0-service.xml, which this list missed --
+# it is a fragment blob of its own rather than one of the twelve, and it was
+# still declaring vendor.zuialarm.hardware.alarm@1.0::IAlarm/default with
+# nothing serving it.
+#
+# STILL OUTSTANDING, and NOT fixed here: vendor/etc/vintf/manifest_cliffs.xml is
+# a stock blob shipped byte-identical (diffed), and ro.boot.product.vendor.sku is
+# `cliffs`, so it is the manifest libvintf actually reads. It still declares SIX
+# interfaces nothing on this build can serve -- MEASURED with `vintf dm` against
+# `service list` + `lshal` on the live device:
+#     com.motorola.hardware.display.touch@1.2::IMotTouch/default
+#     motorola.hardware.camera.desktop@1.0::ICameraDesktop/default
+#     motorola.hardware.camera.desktop@2.0::ICameraDesktop/default
+#     motorola.hardware.health.storage@1.0::IMotStorage/default
+#     vendor.zui.hardware.ifaa@1.0::IIFAADevice/default
+#     vendor.zuialarm.hardware.alarm@1.0::IAlarm/default
+# All six are optional="true" in device_framework_matrix.xml (verified), so
+# stripping them does not regress checkvintf. camera.desktop is the one with a
+# real client: hwservicemanager issues ctl.interface_start for
+# motorola.hardware.camera.desktop@2.0::ICameraDesktop/default TWICE per boot on
+# behalf of vendor/lib64/libmot_chi_desktop_helper.so inside the camera provider
+# (after4.txt:4316 and :5309). It is bounded -- two attempts, then the provider
+# carries on -- but it is the same declared-and-unserved shape that hung
+# mediaserver on the Dolby c2 stores. Because manifest_cliffs.xml is a blob,
+# editing it must be a fix-vendor-blobs.sh fixup or the next extract-files.py
+# silently reverts it.
+
+# --- Dolby DMS (Atmos / DAX): init rc dropped 2026-09-01 -----------------------
+# Removed ONLY vendor/etc/init/dms-service.rc. The service can never work here:
+# stock ships /vendor/etc/dolby/{dax-default,dax-default-spatializer,dax-moto_1,
+# dax-moto_2}.xml (~360 KB of DAX tuning) and we ship NONE of it; the effect is
+# referenced by no audio_effects*.xml on either side; ro.vendor.hw.dolby is unset.
+# The rc had no gate (class hal, unconditional), so init failed its exec on the
+# generic vendor_file label every boot -- the last such failure remaining after the
+# 12 declared-but-absent HAL manifest fragments were dropped.
+#
+# The BINARIES AND LIBS ARE DELIBERATELY LEFT SHIPPED. libdmshal is a shared node
+# for a tightly interlinked cluster -- libdeccfg, libswdap, libswgamedap,
+# libswspatializer, vendor.dolby.hardware.dms@2.{0,1}, vendor.dolby.dms-V1-ndk --
+# and removing it piecemeal risks a soong break for no runtime gain. With no rc
+# nothing starts them, so they are inert dead weight. Removing the whole cluster is
+# a clean follow-up, not a blocker.
+#
+# Licensing note: Dolby Atmos is licensed between Dolby and Motorola for THEIR
+# product. The DAX profiles carry no keys or activation data that we could find, but
+# redistributing them in a third-party ROM is not obviously covered. Not shipping
+# them sidesteps the question. Consequence to document: NO Dolby Atmos on this ROM.
+# It never worked here.
