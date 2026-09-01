@@ -156,3 +156,16 @@ prebuilt_etc {
     sub_dir: "init",
     system_ext_specific: true,
 }
+
+// Reverse wireless charging ("power share"). The rc file writes tx_mode from
+// vendor_init when sys.arcfox.powershare changes; ArcfoxPowerShare (see
+// powershare/Android.bp) is the toggle that sets that property. The rc file
+// carries the full evidence that this hardware can transmit, and the
+// disassembly of stock's HAL showing that the single write is the whole enable
+// path.
+prebuilt_etc {
+    name: "init.arcfox-powershare.rc",
+    src: "init/init.arcfox-powershare.rc",
+    sub_dir: "init",
+    vendor: true,
+}

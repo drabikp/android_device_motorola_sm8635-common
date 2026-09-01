@@ -675,3 +675,40 @@ PRODUCT_PACKAGES += \
     rfs_msm_wpss_shared_symlink \
     rfs_msm_mpss_readonly_fsg \
     rfs_msm_mpss_readonly_vendor_fsg
+
+# --- Reverse wireless charging (power share) --------------------------------
+# arcfox CAN transmit: the wireless front end is a CPS4041 (a combined Qi
+# receiver AND transmitter -- stock ships its 32 kB firmware as
+# vendor/firmware/cps4041.bin), the kernel already exposes tx_mode and the
+# rx_dev_* / wlc_tx_* attributes on the live device, and stock's product
+# partition declares com.motorola.hardware.wireless_power_share. Motorola rates
+# power share on this model at 5 W.
+#
+# Nothing drove it, because stock's client chain -- CoreSettingsExt.apk ->
+# MotoPowerManager (moto-core_services.jar) -> WirelessPowerShareService
+# (Motorola's patched services.jar) -> motorola.hardware.wireless.powershare --
+# is proprietary top to bottom and this ROM ships none of it. So the toggle is
+# ours and the write goes through init:
+#
+#   ArcfoxPowerShare  -- QS tile + Settings > Battery entry, sets
+#                        sys.arcfox.powershare
+#   init.arcfox-powershare.rc
+#                     -- vendor_init writes 1/0 to
+#                        /sys/class/power_supply/wireless/device/tx_mode,
+#                        which disassembly of stock's HAL shows is the entire
+#                        enable path.
+#
+# HANDOVER, sepolicy (owned by another change; this is the WHOLE ask):
+#   device/motorola/sm8635-common/sepolicy/system_ext/private/property_contexts
+#     sys.arcfox.powershare           u:object_r:exported_system_prop:s0
+# No new type, no new allow rule. exported_system_prop is already settable by
+# system_app and readable by every domain including vendor_init, which is the
+# exact intersection a vendor rc property trigger driven from an app needs.
+# Until that line lands the toggle is inert (init rejects the trigger with
+# "unexported property trigger found" and carries on -- no boot risk).
+#
+# See init/init.arcfox-powershare.rc for the measurements behind every claim
+# above, and for why the vendor HAL is not used as the transport.
+PRODUCT_PACKAGES += \
+    init.arcfox-powershare.rc \
+    ArcfoxPowerShare

@@ -1,0 +1,32 @@
+//
+// SPDX-License-Identifier: Apache-2.0
+//
+// ArcfoxPowerShare -- the user-facing half of reverse wireless charging.
+//
+// The kernel node and the vendor charger firmware can already transmit (see
+// device/motorola/sm8635-common/init/init.arcfox-powershare.rc for the
+// evidence). Nothing on this ROM drives them, because stock's client chain
+// (CoreSettingsExt.apk -> MotoPowerManager -> WirelessPowerShareService in
+// Motorola's patched services.jar -> the vendor HAL) is entirely proprietary
+// and unshipped. This app replaces the top of that chain.
+//
+// It runs as uid system (sharedUserId + platform certificate) purely so it may
+// set a system_prop; AOSP already grants set_prop(system_app, system_prop), so
+// this app needs no device sepolicy at all.
+
+android_app {
+    name: "ArcfoxPowerShare",
+
+    srcs: ["src/**/*.java"],
+    resource_dirs: ["res"],
+    manifest: "AndroidManifest.xml",
+
+    // SystemProperties is @hide; platform_apis is what makes it visible.
+    platform_apis: true,
+    certificate: "platform",
+    system_ext_specific: true,
+
+    optimize: {
+        enabled: false,
+    },
+}

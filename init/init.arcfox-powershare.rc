@@ -1,0 +1,146 @@
+# Reverse wireless charging ("power share") -- arcfox / motorola razr 50 ultra.
+#
+# ---------------------------------------------------------------------------
+# WHY THIS DEVICE CAN TRANSMIT (measured, not assumed)
+# ---------------------------------------------------------------------------
+# 1. The wireless charging front end is a ConvenientPower CPS4041 -- stock ships
+#    its firmware as vendor/firmware/cps4041.bin and cps4041_2nd.bin, both
+#    exactly 32768 bytes, which is the part's 32 kB MTP. The CPS4041 is a
+#    single-chip Qi RECEIVER *and* TRANSMITTER (60 W Rx / 20 W Tx). Motorola
+#    rates power share on this model at 5 W.
+# 2. The kernel side is already live on OUR build. Measured on the running
+#    device (adb, 2026-09-01):
+#      /sys/devices/platform/soc/soc:qcom,pmic_glink/
+#          soc:qcom,pmic_glink:qcom,battery_charger/
+#      contains tx_mode, tx_mode_vout, rx_connected, rx_dev_id, rx_dev_type,
+#      rx_dev_manufacturing, wlc_tx_capability, wlc_tx_id, wlc_tx_power,
+#      wlc_tx_sn, wlc_tx_type, wlc_st_changed, wls_input_current_limit.
+#    Those files are created by qti_glink_charger (kernel/motorola/
+#    sm8635-modules/motorola/drivers/power/qti_glink_charger/
+#    qti_glink_charger_core.c:2784 wireless_psy_init(), called unconditionally
+#    from probe at :3673) on chg->wls_psy->dev.parent -- which is exactly the
+#    directory /sys/class/power_supply/wireless/device resolves to. The driver
+#    is bound: it also registers the "main_battery" supply, and
+#    /sys/class/power_supply/main_battery points at soc:qcom,pmic_glink:
+#    mmi,qti-glink-charger on this device.
+# 3. Stock's product partition declares the feature:
+#    product/etc/permissions/com.motorola.hardware.wireless_power_share.xml.
+#
+# ---------------------------------------------------------------------------
+# THE NODE CONTRACT (read from stock's own HAL, not guessed)
+# ---------------------------------------------------------------------------
+# Disassembly of stock /vendor/bin/hw/motorola.hardware.wireless.powershare-
+# service, symbol MotPowerShare::setWlsTxMode(TxMode, TxResult*) at 0x60f0
+# (symbols recovered from its .gnu_debugdata):
+#
+#   TxMode == 1 -> WriteStringToFile("1", "/sys/class/power_supply/wireless/
+#                                          device/tx_mode", false)
+#   TxMode == 0 -> WriteStringToFile("0", <same path>, false)
+#   then getIntFromFile(<same path>) and compare the readback.
+#
+# That is the WHOLE of turning power share on. There is no second write, no
+# current-limit setup, no sequencing. tx_mode_store() in the kernel
+# (qti_glink_charger_core.c:1789) parses the buffer with kstrtoul(buf, 0, ...)
+# -- base 0, so "1" and "0" are unambiguous -- and forwards the value to the
+# ADSP charger firmware as OEM_PROP_WLS_TX_MODE. Everything after that is
+# firmware; the kernel only relays.
+#
+# ---------------------------------------------------------------------------
+# WHY init AND NOT THE VENDOR HAL
+# ---------------------------------------------------------------------------
+# The HAL is not the obstacle -- it works, and it does have a setter
+# (setWlsTxMode; the AIDL interface hash is 0de1c6377a3c776edb6eed27a2bfee8d268-
+# 963d2 and the NDK lib exports Bp/Bn for it). The obstacle is that it has no
+# CLIENT here. On stock the chain is
+#   CoreSettingsExt.apk  ->  motorola.core_services.power.MotoPowerManager
+#   (moto-core_services.jar)  ->  com.android.server.power.powershare.
+#   WirelessPowerShareService (Motorola's patched services.jar)  ->  the HAL.
+# All three of those are Motorola-proprietary and this ROM ships none of them.
+# Rebuilding a Java client would mean reconstructing the .aidl -- method ORDER
+# (transaction codes) and the layout of the Result/TxResult/TxMode/TxStatus
+# parcelables -- from a stripped binary, with no way to validate a wrong guess
+# except by flashing. Since the HAL's entire contribution to *enabling* TX is
+# one 1-byte write to a node init can write directly, that risk buys nothing.
+#
+# What the HAL would additionally buy is STATUS: it polls rx_connected and
+# reports peer device id/type/manufacturer through a callback. This file does
+# not reproduce that, and the toggle above it reports the REQUESTED state, not
+# the measured one. Read the trailing note in the app for what that costs.
+#
+# ---------------------------------------------------------------------------
+# WHY THIS EXACT PROPERTY NAME, AND THE ONE SEPOLICY LINE IT NEEDS
+# ---------------------------------------------------------------------------
+# The trigger has to be settable at runtime by an app, and readable by
+# vendor_init. Those two constraints together pick the property almost by
+# themselves:
+#
+#  * NOT a vendor property. A coredomain is neverallowed from setting any
+#    non-system property (private/property.te, the compatible_property_only
+#    block), and system_app is a coredomain -- so ro.vendor.* / vendor.* /
+#    persist.vendor.* are unreachable from an app, exactly as recorded in
+#    init.arcfox-touch-gesture.rc.
+#
+#  * The trigger is CHECKED AT PARSE TIME. system/core/init/action_parser.cpp
+#    IsActionableProperty(): for an action in a /vendor rc file the subcontext
+#    is non-null, and this device has ro.actionable_compatible_property.enabled
+#    = true (measured with getprop), so unless the name starts with one of the
+#    partner prefixes (ro.vendor./vendor./persist.vendor./odm./ro.boot./...)
+#    init calls CanReadProperty("u:r:vendor_init:s0", name) and REJECTS the
+#    whole action with "unexported property trigger found" if vendor_init
+#    cannot read it. That is why the touch-gesture file can key off
+#    sys.boot_completed: it is boot_status_prop, and private/vendor_init.te:322
+#    grants get_prop(vendor_init, boot_status_prop).
+#
+#    Plain "sys." maps to system_prop, which vendor_init CANNOT read -- so a
+#    bare sys.* name would silently disable this file.
+#
+#  * exported_system_prop satisfies both sides with no new type and no new allow
+#    rule: it is system_public_prop (public/property.te:230), every domain gets
+#    the read via get_prop(domain, exported_system_prop) (private/domain.te),
+#    and private/system_app.te:45 already grants
+#    set_prop(system_app, exported_system_prop). The compatible_property_only
+#    neverallow that guards it exempts coredomain and appdomain, so system_app
+#    is clear.
+#
+# THE ONE LINE THIS FILE DEPENDS ON, in
+# device/motorola/sm8635-common/sepolicy/system_ext/private/property_contexts:
+#
+#     sys.arcfox.powershare           u:object_r:exported_system_prop:s0
+#
+# Without it the name falls through to system_prop; the app can still SET it
+# (set_prop(system_app, system_prop)), but init refuses to parse the two actions
+# below and the toggle does nothing. That is a safe failure -- init logs the
+# rejection and carries on -- but the feature is dead until the line lands.
+#
+# Deliberately NOT persist.*: transmitting must not silently survive a reboot,
+# and persist.* values are restored from /data long after boot anyway.
+#
+# ---------------------------------------------------------------------------
+# NO NEW SELINUX RULE IS NEEDED FOR THE WRITE
+# ---------------------------------------------------------------------------
+# These commands run in vendor_init (this file installs to /vendor/etc/init),
+# and AOSP grants
+#   allow vendor_init { sysfs_type -sysfs_usermodehelper }:file rw_file_perms;
+# (system/sepolicy/private/vendor_init.te:235), plus sysfs_type:dir r_dir_perms
+# and sysfs_type:lnk_file read at :233-234 -- which covers walking the two
+# symlinks in the path (/sys/class/power_supply/wireless, and .../device).
+# tx_mode is plain u:object_r:sysfs:s0 in this tree (stock labels it
+# sysfs_wls_dev; we do not declare that type -- see sepolicy/vendor/
+# init_wls.te). Either label is in the sysfs_type attribute, so the rule holds
+# either way.
+#
+# This MUST stay a /vendor rc file. `neverallow init sysfs:file { open write }`
+# (private/init.te:862) applies to the init domain proper; only the vendor_init
+# subcontext, which is what vendor rc commands execute in, may write sysfs.
+#
+# DAC: tx_mode is 0644 root:root as created by the driver. stock's
+# /vendor/bin/init.mmi.wls.sh (which this tree ships and starts from
+# init.mmi.overlay.rc:235 on sys.boot_completed) chmods it 0660 and chowns it
+# system:system so that the HAL -- which runs as user system -- can write it.
+# init is root either way, so this write works before or after that script.
+
+on property:sys.arcfox.powershare=1
+    write /sys/class/power_supply/wireless/device/tx_mode 1
+
+on property:sys.arcfox.powershare=0
+    write /sys/class/power_supply/wireless/device/tx_mode 0

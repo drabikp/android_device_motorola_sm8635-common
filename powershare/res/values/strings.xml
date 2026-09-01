@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<resources xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
+    <string name="app_name">Power sharing</string>
+    <string name="tile_label">Power sharing</string>
+
+    <string name="settings_summary">Charge other devices on the back of this phone</string>
+
+    <string name="state_on">On</string>
+    <string name="state_off">Off</string>
+
+    <string name="explain">Put a Qi-compatible phone, earbud case or watch on the
+        back of this phone, centred on the wireless charging coil, with the phone
+        closed. Power sharing delivers about 5 W.</string>
+
+    <string name="status_requested">Transmitting is armed. This phone cannot read
+        the charger back, so this shows what was requested, not what the charging
+        firmware is doing.</string>
+    <string name="status_off">Not transmitting.</string>
+
+    <string name="err_battery_low">Battery too low to share power</string>
+    <string name="err_receiving">Can’t share power while charging wirelessly</string>
+
+    <string name="notif_channel">Power sharing</string>
+    <string name="notif_title">Power sharing is on</string>
+    <string name="notif_text">This phone is charging other devices wirelessly.
+        Turns off below <xliff:g id="percent" example="15">%1$d</xliff:g>%%
+        battery.</string>
+    <string name="notif_action_stop">Turn off</string>
+
+    <string name="toast_auto_off_low">Power sharing turned off: battery low</string>
+    <string name="toast_auto_off_wireless">Power sharing turned off: this phone is
+        charging wirelessly</string>
+</resources>
