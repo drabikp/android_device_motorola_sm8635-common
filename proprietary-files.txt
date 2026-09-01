@@ -2791,10 +2791,18 @@ vendor/bin/hw/vendor.qti.hardware.display.composer-service;DISABLE_DEPS
 # invalidated it), and the edit lives in vendor/motorola, which is not a git repo
 # and is wiped by the next extract-files.py.
 #
-# Dropping the dep edges is safe here: both allocator-V1-ndk.so and
-# allocator-V2-ndk.so are installed to /vendor/lib64 regardless, V2 arriving via
-# libcommonchiutils, so the binary resolves at runtime. Verified on the running
-# device, where this service is `running` with both libs present.
+# ⚠️ CORRECTED 2026-09-01. This used to say "both allocator-V1-ndk.so and
+# allocator-V2-ndk.so are installed to /vendor/lib64 regardless ... Verified on
+# the running device". That was FALSE: only V2 was installed (it arrives via
+# libcommonchiutils); nothing pulled V1 in, because ;DISABLE_DEPS is exactly what
+# removes that edge. The claim was safe only for as long as the blob was being
+# rewritten to link V2.
+#
+# The blob is no longer rewritten -- it is the allocator SERVER and must keep its
+# V1 soname (see the note in extract-files.py) -- so V1 is now installed
+# explicitly via PRODUCT_PACKAGES in common.mk. Dropping the dep edges is safe
+# BECAUSE of that line, not regardless of it. If that line is ever removed this
+# service stops linking.
 vendor/bin/hw/vendor.qti.hardware.display.allocator-service;DISABLE_DEPS
 vendor/etc/init/vendor.qti.hardware.display.composer-service.rc
 vendor/etc/init/vendor.qti.hardware.display.allocator-service.rc

@@ -676,6 +676,38 @@ PRODUCT_PACKAGES += \
     rfs_msm_mpss_readonly_fsg \
     rfs_msm_mpss_readonly_vendor_fsg
 
+# --- gralloc allocator: ship V1 ALONGSIDE V2 --------------------------------
+# vendor.qti.hardware.display.allocator-service is the gralloc allocator SERVER
+# and it INHERITS THE BnAllocator VTABLE (five BnAllocator symbols under
+# `llvm-nm -D -u`). It links android.hardware.graphics.allocator-V1-ndk.so, and
+# it must keep linking V1: stable AIDL is transaction-compatible but NOT
+# vtable-compatible -- V2 adds allocate2/isSupported/getIMapperLibrarySuffix, so
+# BnAllocator grows from 10 slots to 13 and V2's _aidl_onTransact dispatches
+# transaction 4 one slot past the end of a V1 object.
+#
+# It was previously caught by the blanket V1->V2 DT_NEEDED rewrite in
+# extract-files.py. Measured consequence: a V1 binary answering
+# getInterfaceVersion() == 2 --
+#   service call ...IAllocator/default 16777215 -> Parcel(00000002)
+# -- while frameworks/native/libs/ui/Gralloc5.cpp sets
+# kIAllocatorMinimumVersion = 2, so libui stopped taking its clean Gralloc4
+# fallback and every process touching GraphicBufferMapper logged
+#   E Gralloc5: Failed to get IMapper library suffix
+#
+# The blob is excluded from that rewrite now, which makes installing V1
+# MANDATORY: it carries ;DISABLE_DEPS, so soong generates no dependency edge
+# that would pull the library in, and nothing else installs V1 (only V2 arrives,
+# via libcommonchiutils). Without this line the service cannot link at all.
+# V1 is frozen upstream and its vendor variant was already being built.
+# ⚠️ The .vendor SUFFIX IS LOAD-BEARING. The bare module name installs the CORE
+# (system) variant and silently puts nothing in /vendor/lib64 -- the build still
+# succeeds, which is how the first attempt at this line shipped a vendor image
+# whose allocator server linked a library that was not there. Verify the ARTIFACT
+# (`ls out/target/product/arcfox/vendor/lib64/ | grep allocator-V1`), not the
+# build's exit code.
+PRODUCT_PACKAGES += \
+    android.hardware.graphics.allocator-V1-ndk.vendor
+
 # --- Reverse wireless charging (power share) --------------------------------
 # arcfox CAN transmit: the wireless front end is a CPS4041 (a combined Qi
 # receiver AND transmitter -- stock ships its 32 kB firmware as
