@@ -124,12 +124,27 @@ set_prop(hal_camera_default, vendor_camera_ledtorchmode_prop)
 # proprietary-files.txt and the binary is on the device (labelled vendor_file, so
 # init will not start it -- the same trap as the FPC and face HALs).
 #
-# It is still not worth wiring up, and the reason is VINTF, not sepolicy. Stock
-# declares motorola.hardware.camera.desktop in manifest_cliffs.xml ONLY -- a
-# different SKU's manifest, not arcfox's -- and this tree declares it nowhere.
-# Labelling the binary and adding the hwservice_contexts entry without a matching
-# VINTF declaration recreates the declared-but-absent hazard this tree has
-# already paid for twice. ICameraDesktop is Motorola's "Ready For" desktop-mode
+# It is still not worth wiring up, and the reason is VINTF, not sepolicy.
+#
+# ⚠️ CORRECTED 2026-09-01. This paragraph used to say the HAL is declared "in
+# manifest_cliffs.xml ONLY -- a different SKU's manifest, not arcfox's -- and
+# this tree declares it nowhere". BOTH halves were wrong, and together they
+# inverted the conclusion. arcfox's SKU IS cliffs
+# (`ro.boot.product.vendor.sku=cliffs`, read off the device), and libvintf reads
+# manifest_$(sku).xml and RETURNS -- so manifest_cliffs.xml is THIS device's
+# manifest, not another SKU's, and the declaration was LIVE.
+# `lshal --types=lazy` showed it exactly that way:
+#   DM,FC ? motorola.hardware.camera.desktop@1.0::ICameraDesktop/default
+#   DM,FC ? motorola.hardware.camera.desktop@2.0::ICameraDesktop/default
+# declared in the Device Manifest, matched by the Framework Compatibility
+# matrix, registered by nobody. The declared-but-absent hazard this paragraph
+# warned about CREATING was one we were already in.
+#
+# It is removed now -- fix-vendor-blobs.sh fixup 5 prunes this and eight other
+# phantom declarations out of the blob. With that done the original advice holds
+# again, for the right reason: labelling the binary and adding the
+# hwservice_contexts entry without RESTORING a VINTF declaration would put us
+# back into the hazard this tree has already paid for twice. ICameraDesktop is Motorola's "Ready For" desktop-mode
 # camera path; the provider's lookup for it is a probe that falls through, and
 # the provider registers and enumerates both cameras with the denial present.
 #
