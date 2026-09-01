@@ -260,12 +260,26 @@ fix_qcril_poweron_opt() {
 # ship verbatim, which is why the edit lives in this script: the next
 # extract-files.py restores stock's copy byte for byte.
 #
-# Nine <hal> blocks, ten declared instances, are removed. Every one was measured
-# on the shipping build 2026-09-01 to be DECLARED AND SERVED BY NOBODY:
-# unregistered in `lshal list -i` / `service list`, and with no server anywhere
-# in the built vendor image -- the only files containing the interface
-# descriptor are the generated interface libraries themselves, which define the
-# interface rather than serve it.
+# Nine <hal> blocks, ten declared instances, are removed. Every one is
+# unregistered on the shipping build -- absent from `lshal list -i` and
+# `service list`.
+#
+# ⚠️ CORRECTED 2026-09-01 (independent review). This comment used to add "and
+# with no server anywhere in the built vendor image". That is FALSE. The image
+# holds a server artifact for every one of the nine -- four named for the pruned
+# fqname exactly (com.motorola.hardware.display.touch@1.2-service,
+# motorola.hardware.camera.desktop@2.0-service,
+# motorola.hardware.health.storage@1.0-service,
+# vendor.zui.hardware.ifaa@1.0-service) plus four -impl.so passthroughs. The
+# search behind that claim excluded any file whose name began with the interface
+# package, which excluded the servers themselves.
+#
+# The REAL reason nothing serves them is that commit 7d26208 deleted their init
+# .rc files (etc/init went 143 -> 121). That is a configuration fact, not a
+# property of the blobs. ⚠️ Consequence: if any of those .rc files is ever
+# restored, the matching manifest entry must be restored WITH it, or the service
+# will start and then fail to register ("must be in VINTF manifest in order to
+# register").
 #
 #   com.dsi.ant                            @1.0::IAnt/default
 #   com.motorola.hardware.display.touch    @1.2::IMotTouch/default
@@ -287,13 +301,21 @@ fix_qcril_poweron_opt() {
 # HAL to be retrievable.
 #
 # ⚠️ NOT REMOVED, deliberately: vendor.qti.hardware.wifi.wifilearner
-# @1.0::IWifiStats/wifiStats. It is unregistered too, but unlike these nine it HAS
-# a real server in the image (/vendor/bin/wifilearner, which carries the
-# descriptor). That one is a "why does it not start" question, not a phantom
-# declaration, and deleting the declaration would hide it.
+# @1.0::IWifiStats/wifiStats. Keep it out of the drop list -- but note the reason
+# first written here ("unlike these nine it HAS a real server") does NOT
+# distinguish it: all nine have servers too, and wifilearner is equally
+# unstartable, since its .rc ships only in stock and not in our image. It is kept
+# because /vendor/bin/wifilearner is a standalone daemon we could plausibly start,
+# so the declaration marks an open question rather than a phantom.
 #
 # Removing a declaration cannot break a working feature here: nothing is serving
 # any of these, so there is no client that succeeds today and would stop.
+#
+# ⚠️ Do not generalise that sentence. It holds for HIDL -- libhidl's
+# ServiceManagement.cpp:924-940 retry loop needs a manifest entry, so undeclared
+# means an immediate nullptr -- but NOT for AIDL:
+# frameworks/native/cmds/servicemanager/ServiceManager.cpp:473-475 calls
+# tryStartService() without consulting isVintfDeclared.
 MANIFEST_CLIFFS_DROP="
 com.dsi.ant
 com.motorola.hardware.display.touch
