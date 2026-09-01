@@ -54,6 +54,29 @@ TARGET_SUPPORTS_64_BIT_APPS := true
 # ran on the prebuilt; KMI-invisible: 20,475 CRC matches / 0 mismatches vs
 # the shipped module set). TARGET_NO_KERNEL_OVERRIDE (a GSI/Cuttlefish-only
 # variable; 0 physical devices upstream) is GONE -- kernel.mk now runs.
+# ⚠️ TARGET_KERNEL_VERSION gates GKI_SUFFIX (kernel.mk:140-144, needs 5.15 <= v
+# <= 6.1 and BOARD_USES_QCOM_HARDWARE). Unset, GKI_SUFFIX is empty and
+# system_dlkm modules install FLAT into lib/modules/ -- but stock's loader,
+# /vendor/bin/system_dlkm_modprobe.sh:15, tests `[ ! -e ${dir}/*/modules.load ]`
+# and modprobes with `-d ${dir}/*/`, i.e. it REQUIRES a versioned subdirectory
+# and silently loads nothing without one. With this set the modules land in
+# lib/modules/android16-6.1/ and the glob matches. This is the same failure the
+# old SYSTEM_DLKM_KVER block existed to prevent.
+TARGET_KERNEL_VERSION := 6.1
+# Set GKI_SUFFIX directly rather than via BOARD_USES_QCOM_HARDWARE. That flag
+# would satisfy kernel.mk:139-144's gate, but it also pulls in
+# vendor/lineage/build/core/qcom_target.mk's soong namespaces, which collide
+# with our extracted blobs:
+#   error: vendor/motorola/sm8635-common/Android.bp:32375:1: module
+#   "vendor.qti.hardware.display.composer-service.xml" found in multiple
+#   namespaces (hardware/qcom-caf/sm8650 and vendor/motorola/sm8635-common)
+# kernel.mk only ASSIGNS GKI_SUFFIX inside that conditional, so a value set here
+# (BoardConfig is read first) survives. Value mirrors what the gate would have
+# produced: /android$(PLATFORM_VERSION)-$(TARGET_KERNEL_VERSION).
+# ⚠️ Whether arcfox should declare BOARD_USES_QCOM_HARDWARE properly, and fix
+# the blob/namespace overlap it exposes, is worth revisiting separately -- every
+# official QCOM device sets it (peridot BoardConfig.mk:67).
+GKI_SUFFIX := /android$(PLATFORM_VERSION)-$(TARGET_KERNEL_VERSION)
 TARGET_KERNEL_SOURCE := kernel/motorola/sm8635
 TARGET_KERNEL_CONFIG := \
     gki_defconfig \
@@ -509,6 +532,17 @@ BOARD_VENDOR_KERNEL_MODULES_BLOCKLIST_FILE := $(COMMON_PATH)/modules/modules.blo
 # without the manual plumbing. Keeping the old block would also hard-error at
 # config time, since it read a file that no longer exists.
 BOARD_SYSTEM_KERNEL_MODULES_LOAD := $(strip $(shell cat $(COMMON_PATH)/modules/modules.list.system_dlkm 2>/dev/null))
+# ⚠️ SYSTEM_KERNEL_MODULES is what actually PARTITIONS the built module set:
+# kernel.mk:563-575 moves exactly these (plus their deps) into system_dlkm and
+# leaves everything else in vendor_dlkm. Without it every module lands in
+# vendor_dlkm and system_dlkm.img ships EMPTY -- which is how tipc, rfkill,
+# cfg80211, mac80211, bluetooth, libarc4 and mii silently moved partitions.
+# Caught pre-flash by system_dlkm.img being 348KB instead of ~12MB; flashing it
+# would have reproduced the 0.19 disaster (no WiFi/BT/mobile data).
+SYSTEM_KERNEL_MODULES := $(BOARD_SYSTEM_KERNEL_MODULES_LOAD)
+# BOOT_KERNEL_MODULES: what belongs in the vendor_boot ramdisk (first + second
+# stage), same mechanism at kernel.mk:588-593.
+BOOT_KERNEL_MODULES := $(BOARD_VENDOR_RAMDISK_KERNEL_MODULES_LOAD)
 
 # --- Verified boot ----------------------------------------------------------
 # Rollback index read from this build's vbmeta.img with avbtool:
