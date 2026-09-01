@@ -251,9 +251,119 @@ fix_qcril_poweron_opt() {
     return 0
 }
 
+# --- fixup 5: prune the declared-but-absent HALs from manifest_cliffs.xml -----
+#
+# manifest_cliffs.xml IS this device's VINTF manifest. arcfox sets
+# ro.boot.product.vendor.sku=cliffs, and libvintf reads manifest_$(sku).xml and
+# RETURNS (VintfObject.cpp) -- device/motorola/sm8635-common/manifest.xml is
+# never consulted, so entries cannot be removed there. The file is a blob we
+# ship verbatim, which is why the edit lives in this script: the next
+# extract-files.py restores stock's copy byte for byte.
+#
+# Nine <hal> blocks, ten declared instances, are removed. Every one was measured
+# on the shipping build 2026-09-01 to be DECLARED AND SERVED BY NOBODY:
+# unregistered in `lshal list -i` / `service list`, and with no server anywhere
+# in the built vendor image -- the only files containing the interface
+# descriptor are the generated interface libraries themselves, which define the
+# interface rather than serve it.
+#
+#   com.dsi.ant                            @1.0::IAnt/default
+#   com.motorola.hardware.display.touch    @1.2::IMotTouch/default
+#   motorola.hardware.camera.desktop       @1.0 and @2.0 ::ICameraDesktop/default
+#   motorola.hardware.health.storage       @1.0::IMotStorage/default
+#   vendor.nxp.nxpnfc_aidl                 INxpNfc/default
+#   vendor.qti.hardware.bluetooth_audio    @2.1::IBluetoothAudioProvidersFactory/default
+#   vendor.qti.hardware.btconfigstore      @2.0::IBTConfigStore/default
+#   vendor.qti.hardware.fm                 @1.0::IFmHci/default
+#   vendor.zui.hardware.ifaa               @1.0::IIFAADevice/default
+#
+# WHY THIS IS NOT COSMETIC. optional="true" in the framework matrix keeps
+# `check_vintf` quiet, but a declaration is a PROMISE to clients: hwservicemanager
+# and servicemanager treat a declared name as one that may yet appear, so
+# getService() waits on it instead of failing fast. That is the same
+# declared-but-absent trap that hung mediaserver over the Dolby c2 stores and left
+# IMediaCasService declared and unserved. It is also a submission problem --
+# VtsTrebleVintfTargetTest walks the device manifest and requires every declared
+# HAL to be retrievable.
+#
+# ⚠️ NOT REMOVED, deliberately: vendor.qti.hardware.wifi.wifilearner
+# @1.0::IWifiStats/wifiStats. It is unregistered too, but unlike these nine it HAS
+# a real server in the image (/vendor/bin/wifilearner, which carries the
+# descriptor). That one is a "why does it not start" question, not a phantom
+# declaration, and deleting the declaration would hide it.
+#
+# Removing a declaration cannot break a working feature here: nothing is serving
+# any of these, so there is no client that succeeds today and would stop.
+MANIFEST_CLIFFS_DROP="
+com.dsi.ant
+com.motorola.hardware.display.touch
+motorola.hardware.camera.desktop
+motorola.hardware.health.storage
+vendor.nxp.nxpnfc_aidl
+vendor.qti.hardware.bluetooth_audio
+vendor.qti.hardware.btconfigstore
+vendor.qti.hardware.fm
+vendor.zui.hardware.ifaa
+"
+
+fix_manifest_cliffs() {
+    local m="$TOP/vendor/motorola/sm8635-common/proprietary/vendor/etc/vintf/manifest_cliffs.xml"
+
+    # Listed unconditionally in proprietary-files.txt, so absence means the
+    # extract failed -- not something to skip past quietly.
+    if [ ! -s "$m" ]; then
+        echo "  manifest_cliffs.xml: missing or empty -- re-run extract-files.py"
+        return 1
+    fi
+
+    CHECK="$CHECK" DROP="$MANIFEST_CLIFFS_DROP" python3 - "$m" <<'PY'
+import os, re, sys
+
+path = sys.argv[1]
+drop = set(os.environ["DROP"].split())
+check = os.environ["CHECK"] == "1"
+src = open(path, encoding="utf-8").read()
+
+# Match whole <hal ...> ... </hal> blocks and key them on <name>. The file is
+# machine-generated with one element per line, but the regex does not rely on
+# that -- only on <hal> blocks not nesting, which VINTF manifests never do.
+blocks = list(re.finditer(r"[ \t]*<hal\b.*?</hal>\n", src, re.S))
+present = {}
+for b in blocks:
+    n = re.search(r"<name>([^<]+)</name>", b.group(0))
+    if n and n.group(1) in drop:
+        present[n.group(1)] = b
+
+unknown = drop - {re.search(r"<name>([^<]+)</name>", b.group(0)).group(1)
+                  for b in blocks
+                  if re.search(r"<name>([^<]+)</name>", b.group(0))}
+if unknown and not present:
+    # Already pruned: every name is gone. That is the idempotent success case.
+    print("  manifest_cliffs.xml: %d phantom HAL declarations already removed (ok)"
+          % len(drop))
+    sys.exit(0)
+
+if check:
+    print("  manifest_cliffs.xml: %d phantom HAL declarations still present -- "
+          "FIXUP MISSING" % len(present))
+    for n in sorted(present):
+        print("      %s" % n)
+    sys.exit(1)
+
+out = src
+for n, b in present.items():
+    out = out.replace(b.group(0), "", 1)
+open(path, "w", encoding="utf-8").write(out)
+print("  manifest_cliffs.xml: removed %d phantom HAL declarations" % len(present))
+for n in sorted(present):
+    print("      %s" % n)
+PY
+}
+
 echo "fix-vendor-blobs:"
 fix_allocator || rc=1
 fix_wlan_ini  || rc=1
 fix_moto_telephony_xml || rc=1
 fix_qcril_poweron_opt || rc=1
+fix_manifest_cliffs || rc=1
 exit $rc
