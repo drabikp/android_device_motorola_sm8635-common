@@ -34,13 +34,8 @@
     carrier_wfc_ims_available_bool). See
     packages/apps/CarrierConfig/assets/carrier_config_carrierid_1713_Orange.xml.
 
-    WARNING: VoWiFi needs one more thing deliberately NOT here. The IWLAN
-    services are bound to nothing: config_wlan_data_service_package and friends
-    are empty strings and vendor.qti.iwlan never runs, which is the same
-    "nothing was ever bound" shape as the ImsService in commit 75b2198. Binding
-    a DataService that has never run on this build can disturb mobile data, so
-    it belongs in its own change, landed separately so a regression is
-    attributable.
+    VoWiFi additionally needs the IWLAN services bound, which is the second
+    block below.
 
     NOT NEEDED: an ims-type APN. Adding one to vendor/apn/SK.xml was proposed
     and is unnecessary; measured, IMS registers WITHOUT it because the modem
@@ -50,4 +45,32 @@
     <bool name="config_device_volte_available">true</bool>
     <bool name="config_device_vt_available">true</bool>
     <bool name="config_device_wfc_ims_available">true</bool>
+
+    <!-- IWLAN service binding, required for VoWiFi (Wi-Fi calling).
+
+         These three default to EMPTY STRINGS in
+         frameworks/base/core/res/res/values/config_telephony.xml, and nothing in
+         device/motorola or vendor/motorola set them. AccessNetworksManager and
+         DataServiceManager read them directly to decide which package provides
+         the WLAN DataService, NetworkService and QualifiedNetworksService. Empty
+         means no provider, so vendor.qti.iwlan is installed on the device but
+         never runs (measured: `ps -A | grep iwlan` returns nothing) and the
+         WLAN-transport NetworkRegistrationInfo sits at registrationState=UNKNOWN.
+
+         Same "nothing was ever bound" shape as the ImsService in commit 75b2198.
+
+         Values match stock, which sets all three in
+         vendor/overlay/framework-res__auto_generated_rro_vendor.apk.
+
+         Note the resources live in config_telephony.xml upstream, not config.xml;
+         overlays match by resource NAME, not by file, so declaring them here is
+         correct.
+
+         WARNING: this binds a DataService and a NetworkService that have never
+         run on this build. If mobile data or WiFi behaves oddly after a flash,
+         suspect this first: revert these three strings, keep the VoLTE bools, and
+         VoLTE is unaffected because it does not use the WLAN transport. -->
+    <string name="config_wlan_data_service_package" translatable="false">vendor.qti.iwlan</string>
+    <string name="config_wlan_network_service_package" translatable="false">vendor.qti.iwlan</string>
+    <string name="config_qualified_networks_service_package" translatable="false">vendor.qti.iwlan</string>
 </resources>
