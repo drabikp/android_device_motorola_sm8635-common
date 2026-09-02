@@ -78,12 +78,14 @@ PRODUCT_USE_DYNAMIC_PARTITIONS := true
 #     obj/PACKAGING/depmod_vendor_stripped_intermediates -- so the images we
 #     pack into super are OURS, not stock's, and an OTA that skipped them would
 #     leave the handset inconsistent with the super we flash.
-#   * vendor_boot and dtbo are built too, but install-lineage-fastboot.sh
-#     deliberately does NOT flash them (it flashes only boot, init_boot, super,
-#     vbmeta, vbmeta_system). The stock copies are meant to stay on the handset,
-#     so shipping ours via OTA would silently change behaviour. Keep them out.
+#   * vendor_boot and dtbo are now INCLUDED. They used to be excluded because we
+#     shipped the prebuilt GKI, whose vermagic matched stock's, so leaving the
+#     stock copies on the handset was coherent. Building our own kernel voids
+#     that: stock's first-stage ramdisk modules belong to a different kernel, so
+#     an OTA that left them behind would install a system that cannot boot.
 AB_OTA_PARTITIONS += \
     boot \
+    dtbo \
     init_boot \
     product \
     system \
@@ -91,7 +93,24 @@ AB_OTA_PARTITIONS += \
     system_dlkm \
     vbmeta \
     vendor \
+    vendor_boot \
     vendor_dlkm
+
+# The A/B updater itself. AB_OTA_UPDATER := true (BoardConfigCommon.mk) makes the
+# build PACKAGE an A/B payload, but installs nothing able to APPLY one, because
+# this product inherits full_base_telephony.mk -- only generic_system.mk and
+# mainline_system.mk carry update_engine, and neither is in our inheritance
+# chain. Measured consequence: `adb sideload` of our own signed zip verified the
+# package (result 0) and then died at
+#
+#   E:Can't run /system/bin/update_engine_sideload (No such file or directory)
+#
+# so the ONLY route that installs the distributable zip did not work at all, and
+# in-system updates could not have worked either.
+PRODUCT_PACKAGES += \
+    update_engine \
+    update_engine_sideload \
+    update_verifier
 
 # Prebuilt kernel modules. 287 in vendor_dlkm, 60 in system_dlkm, extracted
 # from the shipping firmware. These arrive via the blob manifest rather than
