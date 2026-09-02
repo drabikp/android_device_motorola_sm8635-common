@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    arcfox common framework overlay: IMS / VoLTE / VoWiFi platform availability.
+
+    AOSP defaults all three to false (frameworks/base/core/res/res/values/
+    config.xml). With config_device_volte_available=false, ImsManager's
+    isVolteEnabledByPlatform() returns false, updateVoiceCellFeatureValue logs
+    "available = false", reevaluateCapabilities calls turnOffIms(), and
+    GsmCdmaPhone then logs useImsForCall=false for EVERY call. No call ever
+    enters the IMS path and IMS voice never registers. Measured before this
+    change: handleImsConnected occurred ZERO times in the entire log, only
+    handleImsUnregistered with CODE_REGISTRATION_ERROR.
+
+    This is not cosmetic. 2G/3G networks are being switched off in many
+    countries; without VoLTE this device eventually cannot place a voice call at
+    all, because there is no circuit-switched fallback left to drop to.
+
+    PROVEN on the device before shipping, using the debug shortcut ImsManager
+    honours ahead of these resources:
+        setprop persist.dbg.volte_avail_ovr 1
+        setprop persist.dbg.wfc_avail_ovr 1
+    then a reboot. Result: "handleImsRegistered: onImsMmTelConnected
+    imsTransportType=WWAN" for the first time in this port's history, the VoLTE
+    and Wi-Fi calling toggles appeared in Settings, and an ORDINARY call
+    (isEmergency=false) ran with useImsForCall=true over an ImsPhoneConnection
+    with ZERO notifySrvccState events. It stayed on VoLTE for the whole call
+    instead of dropping to circuit-switched.
+
+    Values match stock, which sets all three true in
+    vendor/overlay/framework-res__auto_generated_rro_vendor.apk.
+
+    WARNING: these are only HALF the gate. ImsManager requires BOTH the platform
+    resource AND the carrier config (carrier_volte_available_bool,
+    carrier_wfc_ims_available_bool). See
+    packages/apps/CarrierConfig/assets/carrier_config_carrierid_1713_Orange.xml.
+
+    WARNING: VoWiFi needs one more thing deliberately NOT here. The IWLAN
+    services are bound to nothing: config_wlan_data_service_package and friends
+    are empty strings and vendor.qti.iwlan never runs, which is the same
+    "nothing was ever bound" shape as the ImsService in commit 75b2198. Binding
+    a DataService that has never run on this build can disturb mobile data, so
+    it belongs in its own change, landed separately so a regression is
+    attributable.
+
+    NOT NEEDED: an ims-type APN. Adding one to vendor/apn/SK.xml was proposed
+    and is unnecessary; measured, IMS registers WITHOUT it because the modem
+    raises the IMS PDN from its own ORANGE_SVK mcfg.
+-->
+<resources>
+    <bool name="config_device_volte_available">true</bool>
+    <bool name="config_device_vt_available">true</bool>
+    <bool name="config_device_wfc_ims_available">true</bool>
+</resources>
