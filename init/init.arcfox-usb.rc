@@ -47,7 +47,15 @@
 # We force "adb" rather than restoring persist.vendor.mot.usb.config, because on a
 # device that has never had a good boot that saved value is itself " " -- the
 # blanking ran before anything ever set a real one. Forcing it is also what we want
-# for a bring-up ROM. Runtime mode changes (MTP etc.) still work: UsbDeviceManager
-# sets sys.usb.config directly and does not go through this path.
+# for a bring-up ROM.
+#
+# ⚠️ CORRECTION: this comment used to claim "Runtime mode changes (MTP etc.) still
+# work: UsbDeviceManager sets sys.usb.config directly and does not go through this
+# path." That was ASSERTED, never tested, and it was FALSE. Every USB mode change
+# failed -- MTP, PTP, tethering and webcam -- because we were also building
+# android.hardware.usb.gadget-service.qti, which made UsbDeviceManager choose
+# UsbHandlerHal over UsbHandlerLegacy and stop setting sys.usb.config at all.
+# Dropping that package (common.mk) restores Motorola's init-driven path, which is
+# what stock uses and what the blocks in init.mmi.usb.rc are written for.
 on early-boot
     setprop persist.sys.usb.config adb

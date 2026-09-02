@@ -152,10 +152,33 @@ PRODUCT_PACKAGES += \
     android.hardware.health-service.qti \
     android.hardware.health-service.qti_recovery
 
-# USB. Same -- blob present, no .rc.
+# USB. Only the usb HAL, deliberately NOT the gadget HAL.
+#
+# Stock ships /vendor/bin/hw/android.hardware.usb-service.qti and declares it in
+# VINTF, and ships NO gadget HAL at all -- no binary, no .rc, no manifest entry.
+# Motorola drives USB compositions from init instead: init.mmi.usb.rc has
+# `on property:sys.usb.config=mtp,adb && property:vendor.usb.use_ffs_mtp=1 ...`
+# blocks that link the functions and bind the UDC themselves.
+#
+# We used to build android.hardware.usb.gadget-service.qti from source. That was
+# a mistake with a large blast radius: UsbDeviceManager picks its handler by
+#     mUsbGadgetHal = UsbGadgetHalInstance.getInstance(...)
+#     if (mUsbGadgetHal == null) -> UsbHandlerLegacy else -> UsbHandlerHal
+# so declaring the gadget HAL took the device off Motorola's init path and onto
+# the AOSP HAL path, which cannot work here. Measured consequence: EVERY USB mode
+# change failed -- MTP, PTP, RNDIS/NCM tethering and UVC webcam alike. Selecting
+# "File transfer" did nothing and USB stayed charging + adb, because the HAL
+# cannot link ffs.mtp:
+#
+#   libusbconfigfs: Cannot create symlink .../configs/b.1/function0
+#                   -> .../functions/ffs.mtp errno:22
+#
+# errno 22 is EINVAL from the kernel: the mtp functionfs was never made ready,
+# because sys.usb.ffs.mtp.ready is only set once MtpService opens
+# /dev/usb-ffs/mtp, and MtpService only starts when the legacy handler sets
+# sys.usb.config -- which never happened while the HAL owned the path.
 PRODUCT_PACKAGES += \
-    android.hardware.usb-service.qti \
-    android.hardware.usb.gadget-service.qti
+    android.hardware.usb-service.qti
 
 # Memtrack / vibrator / QSPA. All three had the same no-.rc defect.
 PRODUCT_PACKAGES += \
