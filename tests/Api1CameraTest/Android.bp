@@ -1,0 +1,18 @@
+// Diagnostic ONLY. Deliberately NOT in PRODUCT_PACKAGES: this is built on demand
+// with `m Api1CameraTest` and installed with adb, never shipped.
+//
+// Exists because the charter item "API1 camera/video" cannot be closed by
+// AOSP's camera_client_test: that binary exercises the legacy android::Camera
+// client but never touches MediaRecorder, so the VIDEO half is untestable with
+// it. This app drives the real framework API1 path end to end:
+// Camera.open -> setPreviewDisplay -> startPreview -> unlock -> MediaRecorder.
+package {
+    default_applicable_licenses: ["Android-Apache-2.0"],
+}
+
+android_app {
+    name: "Api1CameraTest",
+    srcs: ["src/**/*.java"],
+    sdk_version: "current",
+    optimize: { enabled: false },
+}
