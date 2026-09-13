@@ -542,7 +542,26 @@ BOARD_SYSTEM_KERNEL_MODULES_LOAD := $(strip $(shell cat $(COMMON_PATH)/modules/m
 SYSTEM_KERNEL_MODULES := $(BOARD_SYSTEM_KERNEL_MODULES_LOAD)
 # BOOT_KERNEL_MODULES: what belongs in the vendor_boot ramdisk (first + second
 # stage), same mechanism at kernel.mk:588-593.
-BOOT_KERNEL_MODULES := $(BOARD_VENDOR_RAMDISK_KERNEL_MODULES_LOAD)
+#
+# It MUST cover the recovery load list too, not just the normal one. Recovery
+# mode on arcfox = this vendor_boot's ramdisk + the recovery partition's ramdisk
+# + this slot's kernel, and first-stage init walks modules.load.recovery (277
+# entries) there. With only the 99 normal-boot modules staged, 178 of those are
+# absent and first_stage_init.cpp:449 treats that as LOG(FATAL): the kernel
+# panics before adbd or USB exist, the bootloader retries, and the phone loops
+# with a blank USB bus. Measured 2026-09-10 on slot b with OUR boot chain --
+# recovery only ever booted here on top of STOCK boot/vendor_boot (the
+# fresh-from-stock install path), which hid this completely. Stock's ramdisk
+# holds 282 .ko: the union of both lists (276) + hdcp_qseecom_dlkm (pulled in by
+# msm_drm via modules.dep) + five more that nothing lists but stock ships. Of
+# those five, cfg80211/mac80211 are left out: in OUR kernel they import rfkill
+# and libarc4 from system_dlkm, so staging them fails the depmod check
+# ("needs unknown symbol rfkill_alloc"), and no recovery-list module needs them.
+# Everything staged here is already built into vendor_dlkm as well.
+BOOT_KERNEL_MODULES := $(sort \
+    $(BOARD_VENDOR_RAMDISK_KERNEL_MODULES_LOAD) \
+    $(BOARD_VENDOR_RAMDISK_RECOVERY_KERNEL_MODULES_LOAD) \
+    hdcp_qseecom_dlkm.ko ipclite.ko synx-driver.ko tz_log_dlkm.ko)
 
 # --- Verified boot ----------------------------------------------------------
 # Rollback index read from this build's vbmeta.img with avbtool:
