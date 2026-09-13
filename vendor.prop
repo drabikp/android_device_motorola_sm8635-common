@@ -629,7 +629,10 @@ wifi.aware.interface=wifi-aware0
 # init_usb domain plus the vendor_mot_*_prop types we do not have yet).
 sys.usb.configfs=1
 sys.usb.controller=a600000.dwc3
-persist.vendor.usb.config=adb
+# (persist.vendor.usb.config=adb used to be set here. It was DEAD: load-bpf-programs
+#  blanks it before the post-boot property sweep can see it, and from the second
+#  boot on load_persist_props replaces it anyway. The restore now lives in
+#  init.arcfox-usb.rc, at early-boot, from Motorola's saved copy.)
 
 # FSG id, for the modem's RF calibration.
 #

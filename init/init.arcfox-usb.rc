@@ -44,10 +44,10 @@
 # With sys.usb.config=adb, init.usb.configfs.rc:17-24 does the rest: start adbd,
 # then on sys.usb.ffs.ready symlink ffs.adb into configs/b.1/f1 and write the UDC.
 #
-# We force "adb" rather than restoring persist.vendor.mot.usb.config, because on a
-# device that has never had a good boot that saved value is itself " " -- the
-# blanking ran before anything ever set a real one. Forcing it is also what we want
-# for a bring-up ROM.
+# (An earlier version forced "adb" here instead of restoring Motorola's saved
+# value, on the grounds that a never-booted device has no saved value. That is
+# now handled by the :-" " default below, which yields adb OFF on a wiped
+# device -- official LineageOS semantics.)
 #
 # ⚠️ CORRECTION: this comment used to claim "Runtime mode changes (MTP etc.) still
 # work: UsbDeviceManager sets sys.usb.config directly and does not go through this
@@ -57,5 +57,37 @@
 # UsbHandlerHal over UsbHandlerLegacy and stop setting sys.usb.config at all.
 # Dropping that package (common.mk) restores Motorola's init-driven path, which is
 # what stock uses and what the blocks in init.mmi.usb.rc are written for.
+# RESTORE FROM MOTOROLA'S SAVED COPY, AT early-boot, INTO BOTH PROPERTIES.
+#
+# Official LineageOS semantics (vendor/lineage/config/common.mk: ro.adb.secure=1
+# on userdebug, no persist.sys.usb.config default): USB debugging is OFF until
+# the user turns it on, and the toggle persists. Stock does the same through
+# init.mmi.usb.sh, which restores persist.vendor.usb.config from
+# persist.vendor.mot.usb.config -- the value Motorola's blanking saved a moment
+# earlier at load-bpf-programs (= last boot's persisted persist.sys.usb.config,
+# or " " on a wiped device). That script cannot run here (unlabelled), so this
+# does the same two writes.
+#
+# Why early-boot and why BOTH properties:
+#   * load-bpf-programs (the blank) has already run; early-boot is the next
+#     event, before `boot` copies persist.sys.usb.config into sys.usb.config
+#     (init.usb.rc:109) and long before AdbService.systemReady reads it.
+#   * Setting persist.vendor.usb.config here makes Motorola's own post-boot
+#     property sweep (`on property:persist.vendor.usb.config=*`, which fires
+#     once after `boot`) re-apply the RIGHT value instead of the blank. That
+#     sweep is what used to turn the toggle off on some boots: it re-blanked
+#     persist.sys.usb.config after a one-shot restore, racing
+#     AdbService.systemReady. No second action is needed, so no race remains.
+#
+# History, both measured on this device (2026-09-13):
+#   - forcing "adb" here alone: toggle came up OFF on ~4 of 6 boots (the sweep
+#     re-blanked it before AdbService read it), port MTP-only, replug useless.
+#   - forcing "adb" here AND on the sweep trigger: 9/9 boots ON -- but the user
+#     could never turn debugging off persistently, which no official build does.
+#
+# Do NOT add any other writer of persist.sys.usb.config on boot-or-later paths;
+# that reintroduces the AdbService race. The user's toggle is the only writer
+# (UsbDeviceManager.setAdbEnabled: "adb" on, "" off), and it persists.
 on early-boot
-    setprop persist.sys.usb.config adb
+    setprop persist.vendor.usb.config ${persist.vendor.mot.usb.config:-" "}
+    setprop persist.sys.usb.config ${persist.vendor.mot.usb.config:-" "}
