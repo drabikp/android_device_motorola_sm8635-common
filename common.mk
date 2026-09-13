@@ -83,15 +83,26 @@ PRODUCT_USE_DYNAMIC_PARTITIONS := true
 #     stock copies on the handset was coherent. Building our own kernel voids
 #     that: stock's first-stage ramdisk modules belong to a different kernel, so
 #     an OTA that left them behind would install a system that cannot boot.
+#   * recovery and vbmeta_system are INCLUDED. arcfox's recovery partition is a
+#     per-slot ramdisk that borrows the kernel from that slot's boot image. The
+#     first release omitted it: a sideload from slot A's recovery installs to
+#     slot B and switches to it, leaving recovery_b as stale stock, which cannot
+#     run on our kernel + vendor_boot and never clears the boot-recovery flag
+#     in misc -- "reboot to recovery" then loops forever. That is the exact
+#     step GApps (or any second package) needs, so it was reported on XDA on
+#     the first day. vbmeta_system is chained from our vbmeta; carry it so the
+#     new slot's AVB set is coherent instead of describing stock partitions.
 AB_OTA_PARTITIONS += \
     boot \
     dtbo \
     init_boot \
     product \
+    recovery \
     system \
     system_ext \
     system_dlkm \
     vbmeta \
+    vbmeta_system \
     vendor \
     vendor_boot \
     vendor_dlkm
