@@ -413,6 +413,13 @@ BOARD_MOTOROLA_DYNAMIC_PARTITIONS_SIZE := 13000000000
 # every one of these partitions as an alternative to the erofs line, so ext4 is
 # fully supported here. Switching matches the known-good reference and removes
 # erofs as a variable.
+# Reserve free space in system/system_ext/product for add-on packages (GApps).
+# Every official LineageOS tree includes this; nothing in ours did, so the
+# 20260910 images shipped 100% full (2.5 MB free on /, 1.4 MB on /product) and
+# MindTheGapps had nowhere to install. The group has 13 GB per slot and our
+# images total ~4.7 GB, so the ~1.4 GB this adds fits comfortably.
+include vendor/lineage/config/BoardConfigReservedSize.mk
+
 BOARD_SYSTEMIMAGE_FILE_SYSTEM_TYPE := ext4
 BOARD_VENDORIMAGE_FILE_SYSTEM_TYPE := ext4
 BOARD_PRODUCTIMAGE_FILE_SYSTEM_TYPE := ext4
