@@ -142,10 +142,10 @@ TARGET_KERNEL_EXT_MODULES := \
     qcom/opensource/camera-kernel \
     qcom/opensource/audio-kernel \
     qcom/opensource/wlan/platform \
-    qcom/opensource/wlan/qcacld-3.0/.kiwi_v2 \
-    qcom/opensource/bt-kernel \
     qcom/opensource/datarmnet-ext/mem \
     qcom/opensource/dataipa/drivers/platform/msm \
+    qcom/opensource/wlan/qcacld-3.0/.kiwi_v2 \
+    qcom/opensource/bt-kernel \
     qcom/opensource/datarmnet/core \
     qcom/opensource/datarmnet-ext/aps \
     qcom/opensource/datarmnet-ext/offload \
