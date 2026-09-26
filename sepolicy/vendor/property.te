@@ -307,6 +307,24 @@ vendor_restricted_prop(vendor_mot_secure_element_prop)
 # excludes coredomain), so no core grant is added.
 get_prop({ domain -coredomain -appdomain }, vendor_mot_secure_element_prop)
 
+# vendor_init must be able to set the prefix too. The stock secure-element HAL rc
+# (android.hardware.secure_element-service.qti.rc:7) maps the framework's eSE
+# restart request onto it -- `on property:sys.ese.hal.restart=1 setprop
+# vendor.ese.client.restart 1` -- and that setprop is what the strongbox rc
+# keys its whole eSE-client restart choreography on. Measured 2026-09-26
+# (logs/esim-investigation-20260923/ese-restart-falsification/post-trigger-state.txt):
+#
+#   init: processing action (sys.ese.hal.restart=1) from (...secure_element-service.qti.rc:7)
+#   avc: denied { set } for property=vendor.ese.client.restart pid=255
+#        scontext=u:r:vendor_init:s0 tcontext=u:object_r:vendor_mot_secure_element_prop:s0
+#   init: Unable to set property 'vendor.ese.client.restart' ... SELinux permission check failed
+#
+# Stock's own policy grants exactly this (vendor_sepolicy.cil:
+# allow vendor_init vendor_mot_secure_element_prop (property_service (set))), so
+# with the type restored the grant has to come back with it. Two more of the
+# same denial fire for vendor_init at every boot.
+set_prop(vendor_init, vendor_mot_secure_element_prop)
+
 # persist.vendor.ssr.enable_ramdumps -- QCOM's subsystem-restart ramdump switch.
 # The property IS already labelled (QCOM's sepolicy_vndr owns vendor_ssr_prop);
 # the denial is purely that vendor_init has no `set` on that type:

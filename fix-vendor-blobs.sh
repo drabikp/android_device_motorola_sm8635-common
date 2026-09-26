@@ -382,10 +382,61 @@ for n in sorted(present):
 PY
 }
 
+# --- fixup 6: do not declare ISecureElement/eSE1 (manifest_cliffs/pineapple) ---
+#
+# The eSE1 instance of android.hardware.secure_element-service.qti is the
+# AP-side (TZ over SPI) view of the Thales secure element that ALSO carries the
+# eUICC. On this build its open never succeeds -- `GPQESE_CMD_OPEN failed :
+# 0xFFFF000E` on every init(), stock kernel chain or ours, NFC on or off,
+# permissive or enforcing -- and the HAL's recovery for that failure is
+# `STSEReset: ST54J SE reset (cold_reset)`, which power-cycles the shared chip:
+# the eUICC stops answering the modem <=20 ms later for ~258 s, every cold boot
+# (logs/esim-investigation-20260923/, ESIM-FINDINGS.md §5c).
+#
+# Nothing on this build consumes eSE1: the Thales StrongBox keymint and weaver
+# (its only OMAPI clients on stock) are deliberately not shipped (see
+# proprietary-files.txt, "STRONGBOX (Thales) DROPPED"). Removing the declaration
+# makes servicemanager refuse the HAL's eSE1 registration and com.android.se skip
+# the terminal -- init() is never called, so the SE is never reset. SIM1/SIM2
+# (android.hardware.secure_element.xml fragment) are untouched. Measured
+# 2026-09-26: with the HAL prevented from initialising eSE1 the slot-2 wedge is
+# gone and the eUICC enumerates 260 ms after LOADED (coldboot-sehal-disabled-run1,
+# coldboot-no-ese1-decl-run1).
+#
+# Revert this fixup (and restore the block) the day StrongBox/weaver return AND
+# the eSE1 open works; until then a declared eSE1 is a promise that ends in a
+# reset of the eSIM.
+fix_manifest_ese1() {
+    local rc=0 m
+    for m in manifest_cliffs.xml manifest_pineapple.xml; do
+        local f="$TOP/vendor/motorola/sm8635-common/proprietary/vendor/etc/vintf/$m"
+        if [ ! -s "$f" ]; then echo "  $m: missing or empty -- re-run extract-files.py"; rc=1; continue; fi
+        CHECK="$CHECK" python3 - "$f" <<'PY2' || rc=1
+import os, re, sys
+path = sys.argv[1]; name = os.path.basename(path); check = os.environ["CHECK"] == "1"
+src = open(path, encoding="utf-8").read()
+pat = re.compile(r"[ \t]*<hal\b[^>]*>\s*<name>android\.hardware\.secure_element</name>\s*"
+                 r"<fqname>ISecureElement/eSE1</fqname>\s*</hal>\n", re.S)
+hits = pat.findall(src)
+if not hits:
+    if "eSE1" in src:
+        print("  %s: eSE1 still mentioned in an unexpected shape -- FIXUP MISSING" % name); sys.exit(1)
+    print("  %s: ISecureElement/eSE1 already undeclared (ok)" % name); sys.exit(0)
+if check:
+    print("  %s: ISecureElement/eSE1 still declared -- FIXUP MISSING" % name); sys.exit(1)
+out = pat.sub("", src)
+open(path, "w", encoding="utf-8").write(out)
+print("  %s: removed the ISecureElement/eSE1 declaration (%d block)" % (name, len(hits)))
+PY2
+    done
+    return $rc
+}
+
 echo "fix-vendor-blobs:"
 fix_allocator || rc=1
 fix_wlan_ini  || rc=1
 fix_moto_telephony_xml || rc=1
 fix_qcril_poweron_opt || rc=1
 fix_manifest_cliffs || rc=1
+fix_manifest_ese1 || rc=1
 exit $rc
