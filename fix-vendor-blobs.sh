@@ -432,6 +432,30 @@ PY2
     return $rc
 }
 
+# --- fixup 7: do not START the QTI secure_element HAL ---------------------------
+#
+# Pairs with fixup 6. With eSE1 undeclared, servicemanager refuses the HAL's
+# addService and the blob CHECK-aborts on it (`Check failed: status == STATUS_OK
+# (status=-3)`), so init would restart it every ~5 s with a tombstone each time
+# (measured 2026-09-26, coldboot-no-ese1-decl-run1: 18 tombstones in 80 s).
+# Its other two instances, ISecureElement/SIM1 and /SIM2, are registered by
+# qcrilNrd, not by this binary, so with eSE1 gone the service has no job left.
+# Mark it `disabled` in its own rc (the blob rc is shipped verbatim, hence the
+# edit lives here); the `on property:sys.ese.hal.restart=1` trigger in the same
+# file stays. Undo together with fixup 6.
+fix_sehal_rc() {
+    local f="$TOP/vendor/motorola/sm8635-common/proprietary/vendor/etc/init/android.hardware.secure_element-service.qti.rc"
+    if [ ! -s "$f" ]; then echo "  secure_element rc: missing or empty -- re-run extract-files.py"; return 1; fi
+    if /usr/bin/grep -qE '^service vendor\.secure_element ' "$f" && ! /usr/bin/grep -qE '^    disabled$' "$f"; then
+        if [ "$CHECK" = 1 ]; then echo "  secure_element rc: service not disabled -- FIXUP MISSING"; return 1; fi
+        /usr/bin/sed -i '/^service vendor\.secure_element /,/^$/{s/^    group nfc system$/    group nfc system\n    disabled/}' "$f"
+        /usr/bin/grep -qE '^    disabled$' "$f" || { echo "  secure_element rc: sed did not apply"; return 1; }
+        echo "  secure_element rc: marked vendor.secure_element disabled"
+    else
+        echo "  secure_element rc: vendor.secure_element already disabled (ok)"
+    fi
+}
+
 echo "fix-vendor-blobs:"
 fix_allocator || rc=1
 fix_wlan_ini  || rc=1
@@ -439,4 +463,5 @@ fix_moto_telephony_xml || rc=1
 fix_qcril_poweron_opt || rc=1
 fix_manifest_cliffs || rc=1
 fix_manifest_ese1 || rc=1
+fix_sehal_rc || rc=1
 exit $rc
