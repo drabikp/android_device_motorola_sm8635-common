@@ -456,6 +456,35 @@ fix_sehal_rc() {
     fi
 }
 
+# --- fixup 8: let crash_dump run inside the Codec2 HALs' seccomp sandbox ---------
+#
+# The stock c2audio HAL dies within ~16 s of boot in roughly 2 boots of 5
+# (16 deaths in 21 instrumented boots, 2026-10-04) and takes mediaserver --
+# once system_server -- down with it, yet no tombstone is ever written: init
+# only logs "received SIGSYS". debuggerd's crash_dump inherits the crashing
+# process's seccomp filter, and of the syscalls crash_dump needs
+# (system/core/debuggerd/seccomp_policy/crash_dump.arm64.policy) these policies,
+# unchanged from stock, lack exactly two: uname, which the tombstone writer
+# calls (libdebuggerd/tombstone_proto.cpp), and setsockopt. So the dumper
+# itself is killed and the real fault stays invisible. AOSP's media policies
+# @include the crash_dump policy for exactly this reason; allow the two here.
+fix_codec2_seccomp() {
+    local dir="$TOP/vendor/motorola/sm8635-common/proprietary/vendor/etc/seccomp_policy"
+    local f s r=0
+    for f in c2audio.vendor.base-arm64.policy c2audio.vendor.base-arm.policy \
+             codec2.vendor.base-arm64.policy; do
+        if [ ! -s "$dir/$f" ]; then echo "  $f: missing or empty -- re-run extract-files.py"; r=1; continue; fi
+        for s in uname setsockopt; do
+            /usr/bin/grep -qE "^$s:" "$dir/$f" && continue
+            if [ "$CHECK" = 1 ]; then echo "  $f: $s not allowed -- FIXUP MISSING"; r=1; continue; fi
+            [ -n "$(tail -c1 "$dir/$f")" ] && echo >> "$dir/$f"
+            printf '%s: 1\n' "$s" >> "$dir/$f"
+            echo "  $f: allowed $s for crash_dump"
+        done
+    done
+    return $r
+}
+
 echo "fix-vendor-blobs:"
 fix_allocator || rc=1
 fix_wlan_ini  || rc=1
@@ -464,4 +493,5 @@ fix_qcril_poweron_opt || rc=1
 fix_manifest_cliffs || rc=1
 fix_manifest_ese1 || rc=1
 fix_sehal_rc || rc=1
+fix_codec2_seccomp || rc=1
 exit $rc
