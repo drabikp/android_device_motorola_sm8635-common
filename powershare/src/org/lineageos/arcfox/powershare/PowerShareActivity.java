@@ -8,10 +8,12 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.graphics.Insets;
 import android.os.Bundle;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.ViewGroup;
+import android.view.WindowInsets;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.Switch;
@@ -67,6 +69,17 @@ public class PowerShareActivity extends Activity {
         ScrollView scroll = new ScrollView(this);
         scroll.addView(root);
         setContentView(scroll);
+
+        // Edge-to-edge is enforced from target SDK 35 (no opt-out from 36):
+        // the content starts at the top of the window, so the switch sat under
+        // the action bar and could not be seen. The insets handed to the
+        // content already include the action bar's height.
+        findViewById(android.R.id.content).setOnApplyWindowInsetsListener((v, insets) -> {
+            Insets bars = insets.getInsets(
+                    WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+            v.setPadding(bars.left, bars.top, bars.right, bars.bottom);
+            return insets;
+        });
     }
 
     @Override
