@@ -542,24 +542,32 @@ PRODUCT_PACKAGES += \
     init.arcfox-nfc.rc
 
 
-# Bluetooth audio HAL. Without it com.android.bluetooth HARD-ABORTS on every
-# enable attempt, which is the flashing BT toggle:
-#   F bluetooth: LE Audio Client requires Bluetooth Audio HAL V2.1 at least.
-#                Either disable LE Audio Profile, or update your HAL
-#   E bluetooth: HalVersionManager: No supported HAL version
-#   BluetoothSystemServer: requested to [Disable]. Reason is CRASH
-# LE_AUDIO is enabled by default and the check is LOG_ALWAYS_FATAL. The vendor
-# only provides the QTI-specific HIDL vendor.qti.hardware.bluetooth_audio@2.1;
-# nothing declares the AOSP AIDL
-# android.hardware.bluetooth.audio.IBluetoothAudioProviderFactory/default.
-# This module is AOSP's own software implementation and brings its own vintf
-# fragment, so it is a plain device-tree omission rather than a blob problem.
+# Bluetooth audio provider: Motorola's, and ONLY Motorola's.
 #
-# NOTE this does not turn Bluetooth on by itself: the stack also wants an AIDL
-# android.hardware.bluetooth.IBluetoothHci, while stock declares only the HIDL
-# @1.1 one. That still needs an AIDL BT HAL built over the QTI transport.
+# The AIDL IBluetoothAudioProviderFactory/default must be declared, or
+# com.android.bluetooth hard-aborts on every enable (LE Audio's
+# "requires Bluetooth Audio HAL V2.1 at least" is LOG_ALWAYS_FATAL) -- the
+# flashing-toggle bug of 2026-08. It was first fixed by shipping AOSP's
+# software provider (android.hardware.bluetooth.audio-impl), because at the
+# time Motorola's never registered (the LHDC ABI break, fixed 2026-08-27 in
+# vendor/qcom/opensource/interfaces).
+#
+# Once Motorola's registered too, the two raced. The stock audio HAL service
+# dlopens "android.hardware.bluetooth.audio-impl" at start-up (stock ships no
+# such library, so on stock it is a no-op) and registers AOSP's factory first;
+# Motorola's -impl-qti registers the same name ~0.2-3 s later from inside PAL's
+# A2DP init and overwrites it. On a cold boot the Bluetooth stack starts later
+# and binds Motorola's, so A2DP worked; but after ANY audio HAL restart the
+# stack re-fetches immediately, binds AOSP's, and every A2DP stream is silent
+# ("Failed to open source stream for a2dp", PAL only listens to Motorola's
+# sessions) until Bluetooth is toggled. Calls (SCO) are unaffected. Reproduced
+# by ear 2026-10-02; with AOSP's provider absent, 3/3 audio HAL restarts
+# rebound Motorola's (servicemanager's waitForService).
+#
+# So: do not ship AOSP's provider, and declare Motorola's at the version it
+# implements (V3, as stock does; FCM 8 + 202404/202504 accept 3-5).
 PRODUCT_PACKAGES += \
-    android.hardware.bluetooth.audio-impl
+    android.hardware.bluetooth.audio-arcfox.xml
 
 # The CLASSIC Bluetooth profiles. Without these the stack has no A2DP/HFP/AVRCP
 # at all, so a speaker or headset PAIRS and then cannot connect -- Settings just

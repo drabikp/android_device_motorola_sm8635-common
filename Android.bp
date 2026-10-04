@@ -74,6 +74,16 @@ prebuilt_etc {
     vendor: true,
 }
 
+// Bluetooth audio provider declaration (V3, Motorola's provider). A fragment for
+// the same reason as the two above; see the file and common.mk for why the AOSP
+// provider must not be shipped alongside it.
+prebuilt_etc {
+    name: "android.hardware.bluetooth.audio-arcfox.xml",
+    src: "vintf/android.hardware.bluetooth.audio-arcfox.xml",
+    sub_dir: "vintf/manifest",
+    vendor: true,
+}
+
 // Restores the USB gadget config that init.mmi.usb.rc blanks, which is what
 // gives us adb. See the file itself for the full mechanism and the trigger
 // ordering that makes `on early-boot` the only correct place for it.
