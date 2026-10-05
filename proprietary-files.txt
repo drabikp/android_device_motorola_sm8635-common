@@ -2346,6 +2346,18 @@ vendor/etc/media_profiles_cliffs_v1.xml
 vendor/etc/media_profiles_pineapple.xml
 vendor/etc/media_profiles_V1_0.xml
 vendor/etc/media_profiles.xml
+# Qualcomm's video platform specs. The QTI Codec2 video service reads
+# /vendor/etc/media${vendor.media.target_variant}/video_system_specs.json, the
+# variant coming from init.qti.media.sh (_cliffs_v0 on soc 614, _cliffs_v1 when
+# the vidc sku_version is 1, _pineapple otherwise). Without the file the codec
+# runs with no plugins and no pre-processing filters -- "Failed to read platform
+# linear color format" -- and libqcodec2_imgtxrfilter, which takes RGBA input,
+# never loads. So every RGBA surface encode, i.e. screen recording on the HW
+# encoder, was rejected: "RGBA8888_UBWC is not a supported pixel format!", 0
+# frames. With it: 90 frames in 3 s. Official trees (peridot, sm8650) ship these.
+vendor/etc/media_cliffs_v0/video_system_specs.json
+vendor/etc/media_cliffs_v1/video_system_specs.json
+vendor/etc/media_pineapple/video_system_specs.json
 vendor/etc/mem_logger_config.xml
 vendor/etc/microphone_characteristics.xml
 vendor/etc/mmi_wdog.conf
