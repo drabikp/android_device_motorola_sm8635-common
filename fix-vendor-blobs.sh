@@ -485,6 +485,99 @@ fix_codec2_seccomp() {
     return $r
 }
 
+# --- fixup 9: the Codec2 services allocate an Android 14-sized ComponentStore ----
+#
+# Both QTI Codec2 services do, in main():
+#
+#     operator new(0x108)                       // 264 = sizeof(ComponentStore) in A14
+#     utils::ComponentStore::ComponentStore()   // ...constructed by OUR libcodec2_hidl
+#
+# The constructor is the platform's (libcodec2_hidl@1.x is built from source, as
+# on every official LineageOS QTI tree), and AOSP grew the class after Motorola
+# built these binaries: frameworks/av 700f152a80 (mParamReflector became a
+# vector, +8) and 07b6b1570b (mMultiAccessUnitReflector, +16). Measured from the
+# vtables' virtual-base offsets and the constructors' stores, stock and ours, for
+# V1_0, V1_1 and V1_2 alike:
+#
+#     stock: RefBase at 0xf8  -> 264 bytes      ours: RefBase at 0x110 -> 288 bytes
+#
+# So the constructor writes the RefBase sub-object -- the vptr and the refcount
+# block -- 8..24 bytes past the end of the allocation, onto the next scudo chunk's
+# header; in every decStrong tombstone the "vptr" slot holds that header. Whoever
+# owns the neighbouring chunk overwrites it, at random. That is the whole family
+# of boot-time Codec2 deaths
+# (2026-10-04/05: c2audio or c2 died in 3 of 10 boots, 6 deaths):
+#   - SIGABRT in c2audio main(): __cfi_slowpath on the RefBase vptr at main+988,
+#     right after this constructor -- the vptr is garbage;
+#   - SIGSEGV in RefBase::decStrong under BnHwComponentStore::_hidl_listComponents
+#     / _hidl_getPoolClientManager -- the refcount block is garbage;
+# and through them the mediaserver aborts in libcodec2_client and the one
+# system_server soft reboot after boot.
+#
+# Fix: allocate 512 bytes. `mov w0,#0x108` is the only occurrence of that
+# instruction in either binary and main() touches the object only through its
+# vtable afterwards (it reads the vbase offset from the vtable, never a fixed
+# member offset), so a bigger block is all it needs. One byte per binary.
+# Hash-pinned: a different firmware must be re-analysed, not patched blindly.
+# The guard below re-checks that the built libcodec2_hidl still fits in 512, for
+# both versions in use (c2audio constructs V1_0, c2 constructs V1_2). It reads
+# out/ as it stands, so its verdict is only as fresh as the last build.
+fix_codec2_store_alloc() {
+    local dir="$TOP/vendor/motorola/sm8635-common/proprietary/vendor/bin/hw"
+    local r=0 b stock patched off cur
+    for spec in \
+        "vendor.qti.media.c2audio@1.0-service 0x60b4 f866605bf407105fa51c64ef1d5eb4438ebaf57dfca116d65bea1fe773ce5b77 04e8acff9e63e171c3a157dde9e16864c23dfceb709c2cc7d34f01773807bdf1" \
+        "vendor.qti.media.c2@1.0-service 0x29c8 43e2535ccea69a64c7743559ed4e85920395c257d2aec25f82535059745e8da9 0c59c079d592e9e56cefda253526a772f97a003a86607d7ff2dc3dcf3fa42a7f"; do
+        set -- $spec; b=$1; off=$2; stock=$3; patched=$4
+        if [ ! -s "$dir/$b" ]; then echo "  $b: missing or empty -- re-run extract-files.py"; r=1; continue; fi
+        cur=$(sha256sum "$dir/$b" | cut -d' ' -f1)
+        if [ "$cur" = "$patched" ]; then
+            echo "  $b: ComponentStore allocation already 512 bytes (ok)"
+        elif [ "$cur" = "$stock" ]; then
+            if [ "$CHECK" = 1 ]; then echo "  $b: still allocates 264 bytes -- FIXUP MISSING"; r=1; continue; fi
+            # mov w0,#0x108 (00 21 80 52) -> mov w0,#0x200 (00 40 80 52): byte 1 of the instruction.
+            printf '\x40' | dd of="$dir/$b" bs=1 seek=$((off + 1)) conv=notrunc status=none
+            if [ "$(sha256sum "$dir/$b" | cut -d' ' -f1)" = "$patched" ]; then
+                echo "  $b: ComponentStore allocation raised to 512 bytes"
+            else
+                echo "  $b: patch did not produce the expected hash"; r=1
+            fi
+        else
+            echo "  $b: unknown build (sha256 $cur) -- re-derive the allocation site before patching"; r=1
+        fi
+    done
+    # Guard, only when a build exists: the platform object must still fit.
+    local re="$TOP/prebuilts/clang/host/linux-x86/llvm-binutils-stable/llvm-readelf"
+    local v lib need
+    for v in 0 2; do
+        lib="$TOP/out/target/product/arcfox/vendor/lib64/libcodec2_hidl@1.$v.so"
+        [ -s "$lib" ] && [ -x "$re" ] || continue
+        need=$(python3 - "$lib" "$re" "$v" <<'EOF'
+import struct, subprocess, sys
+lib, re, v = sys.argv[1], sys.argv[2], sys.argv[3]
+sym = '_ZTVN7android8hardware5media2c24V1_%s5utils14ComponentStoreE' % v
+syms = subprocess.run([re, '--dyn-syms', '--wide', lib], capture_output=True, text=True).stdout
+addr = [int(l.split()[1], 16) for l in syms.splitlines() if l.split()[-1:] == [sym]][0]
+data = open(lib, 'rb').read()
+for l in subprocess.run([re, '-lW', lib], capture_output=True, text=True).stdout.splitlines():
+    p = l.split()
+    if p and p[0] == 'LOAD':
+        off, va, fsz = int(p[1], 16), int(p[2], 16), int(p[4], 16)
+        if va <= addr < va + fsz:
+            # first qword of the vtable group = the one virtual-base (RefBase) offset;
+            # RefBase (vptr + mRefs, 16 bytes) is laid out last
+            print(struct.unpack('<q', data[off + addr - va:off + addr - va + 8])[0] + 16)
+EOF
+)
+        if [ -n "$need" ] && [ "$need" -le 512 ]; then
+            echo "  libcodec2_hidl@1.$v: ComponentStore needs $need bytes, fits in 512 (ok)"
+        else
+            echo "  libcodec2_hidl@1.$v: ComponentStore needs ${need:-?} bytes -- does NOT fit in 512, raise fixup 9"; r=1
+        fi
+    done
+    return $r
+}
+
 echo "fix-vendor-blobs:"
 fix_allocator || rc=1
 fix_wlan_ini  || rc=1
@@ -494,4 +587,5 @@ fix_manifest_cliffs || rc=1
 fix_manifest_ese1 || rc=1
 fix_sehal_rc || rc=1
 fix_codec2_seccomp || rc=1
+fix_codec2_store_alloc || rc=1
 exit $rc
