@@ -1279,6 +1279,29 @@ vendor/etc/permissions/unavail.android.hardware.sensor.relative_humidity.xml
 vendor/etc/permissions/unavail.android.software.virtualization_framework.xml
 vendor/etc/permissions/vendor.qti.dcf.xml
 vendor/etc/permissions/vendor.qti.qva.xml
+# Sensor feature declarations. SystemConfig reads
+# /vendor/etc/permissions/sku_${ro.boot.product.vendor.sku}/ ("cliffs"), and
+# none of these was extracted, so the phone declared no gyroscope, light,
+# proximity or step sensors to apps although all of them are in the sensor list
+# (Play Store filtering, step-counter apps, spatial-audio head tracking; the
+# head tracker is backed by sensors.dynamic_sensor_hal.so in hals.conf).
+# hifi_sensors stays off: the unavail.*hifi_sensors.xml above overrides it, as
+# on stock. NOT shipped, on purpose:
+#   vendor/etc/permissions/sku_cliffs/android.hardware.sensor.barometer.xml
+#     -- Qualcomm's reference default. The razr 50 ultra has no barometer: no
+#     pressure sensor is published and the specs list none; stock declares it
+#     anyway.
+#   vendor/etc/permissions/sku_pineapple/* -- another SKU, never read here.
+# The keystore feature is declared from common.mk (AOSP's hardware_keystore_V3.xml).
+vendor/etc/permissions/sku_cliffs/android.hardware.sensor.accelerometer.xml
+vendor/etc/permissions/sku_cliffs/android.hardware.sensor.compass.xml
+vendor/etc/permissions/sku_cliffs/android.hardware.sensor.dynamic.head_tracker.xml
+vendor/etc/permissions/sku_cliffs/android.hardware.sensor.gyroscope.xml
+vendor/etc/permissions/sku_cliffs/android.hardware.sensor.hifi_sensors.xml
+vendor/etc/permissions/sku_cliffs/android.hardware.sensor.light.xml
+vendor/etc/permissions/sku_cliffs/android.hardware.sensor.proximity.xml
+vendor/etc/permissions/sku_cliffs/android.hardware.sensor.stepcounter.xml
+vendor/etc/permissions/sku_cliffs/android.hardware.sensor.stepdetector.xml
 vendor/lib64/hw/android.hardware.audio.effect@2.0-impl.so
 vendor/lib64/hw/android.hardware.audio.effect@4.0-impl.so
 vendor/lib64/hw/android.hardware.audio.effect@5.0-impl.so

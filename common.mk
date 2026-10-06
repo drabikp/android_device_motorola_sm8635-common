@@ -254,6 +254,14 @@ PRODUCT_PACKAGES += \
     android.hardware.security.keymint-V2-ndk.vendor \
     android.hardware.security.keymint-V3-ndk.vendor
 
+# The hardware keystore feature, at the version the KeyMint V3 HAL above
+# implements. Stock declares it (vendor/etc/permissions/
+# android.hardware.hardware_keystore.xml, version 300); this port never did.
+# AOSP's V3 module rather than the blob: a PRODUCT_COPY_FILES onto that path
+# collides with the default KeyMint HAL's module of the same name.
+PRODUCT_PACKAGES += \
+    android.hardware.hardware_keystore_V3.xml
+
 
 # THE CURRENT BOOT BLOCKER. These two restore the dependencies of the
 # libsensorndkbridge BLOB, and without them the device does not boot.
