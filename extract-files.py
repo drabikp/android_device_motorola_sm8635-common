@@ -156,6 +156,17 @@ blob_fixups: blob_fixups_user_type = {
             'sched_get_priority_max: 1\n'
             'sched_setscheduler: 1',
     ),
+    # Same class as the qsap_location entry above, new with LineageOS 24.0. The
+    # stock policy (byte-identical to the W1UXS36H dump) allows no lseek, and on
+    # Android 17 the vendor libraries we build from source make that call, so
+    # minijail kills the daemon with SIGSYS. Sony's sm8650-common hit exactly this
+    # on lineage-24.0 only (da2fea10e8, "Let some qcom stuff use lseek syscall"):
+    #   E qsap_qapeservice: libminijail[5608]: blocked syscall: lseek
+    # We ship the same daemon, rc and policy (vendor/bin/qsap_qapeservice,
+    # vendor.qsap.qapeservice.rc). If logcat names another qsap_* daemon the
+    # same way, add its policy here rather than guessing ahead of the evidence.
+    'vendor/etc/seccomp_policy/qsap_qapeservice.policy': blob_fixup()
+        .add_line_if_missing('lseek: 1'),
     'vendor/etc/vintf/manifest/bluetooth_audio.xml': blob_fixup()
         .regex_replace('<version>3</version>', '<version>5</version>'),
     'vendor/etc/vintf/manifest/face-default_3.xml': blob_fixup()
