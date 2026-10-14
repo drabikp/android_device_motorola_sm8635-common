@@ -123,11 +123,6 @@ PRODUCT_PACKAGES += \
     update_engine_sideload \
     update_verifier
 
-# Prebuilt kernel modules. 287 in vendor_dlkm, 60 in system_dlkm, extracted
-# from the shipping firmware. These arrive via the blob manifest rather than
-# being built, because this is a GKI device with no usable kernel source.
-BOARD_VENDOR_KERNEL_MODULES_LOAD := $(strip $(shell cat $(COMMON_PATH)/modules.load 2>/dev/null))
-
 # =============================================================================
 # HALs BUILT FROM SOURCE
 # =============================================================================
