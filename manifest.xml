@@ -147,8 +147,8 @@
          mis-diagnosed as a version problem when the file was simply not read.
          The declaration now lives in a fragment, which IS always merged:
          device/motorola/sm8635-common/vintf/manifest_media_c2.xml.
-         This file still has to exist -- it is DEVICE_MANIFEST_FILE, and
-         check_vintf fails image assembly without it -- so it is a BUILD-TIME
+         This file still has to exist - it is DEVICE_MANIFEST_FILE, and
+         check_vintf fails image assembly without it - so it is a BUILD-TIME
          compatibility input only. Do not add runtime-critical declarations. -->
 
     <!-- motorola.hardware.camera.desktop REMOVED. It was declared here while
