@@ -1319,7 +1319,6 @@ vendor/lib64/hw/android.hardware.gnss-aidl-impl-qti.so
 vendor/lib64/hw/android.hardware.renderscript@1.0-impl.so
 vendor/lib64/hw/android.hardware.soundtrigger@2.2-impl.so
 vendor/lib64/hw/android.hardware.soundtrigger@2.3-impl.so
-vendor/lib64/hw/audio.bluetooth.default.so;DISABLE_CHECKELF
 vendor/lib64/hw/audio.primary.pineapple.so
 vendor/lib64/hw/audio.r_submix.default.so
 vendor/lib64/hw/audio.usb.default.so

@@ -303,11 +303,6 @@ blob_fixups: blob_fixups_user_type = {
             'android.system.keystore2-V1-ndk.so',
             'android.system.keystore2-V5-ndk.so'
     ),
-    'vendor/lib64/hw/audio.bluetooth.default.so': blob_fixup()
-        .replace_needed(
-            'android.hardware.bluetooth.audio-V3-ndk.so',
-            'android.hardware.bluetooth.audio-V5-ndk.so'
-    ),
     # Android 17's libgui grew a trailing std::optional<BufferFreedCallback>
     # parameter on BufferItemConsumer::acquireBuffer/releaseBuffer
     # (frameworks/native libs/gui/include/gui/BufferItemConsumer.h), so the old
@@ -322,6 +317,31 @@ blob_fixups: blob_fixups_user_type = {
     # the same Motorola library. The shim module only exists on 24.0.
     'vendor/lib64/libmot_chi_desktop_helper.so': blob_fixup()
         .add_needed('libgui_buffer_shim_vendor.so'),
+    # Android 17: symbols our 23.2 frameworks/av and frameworks/native forks
+    # restored now come from LineageOS's hardware/lineage/compat shims, as on
+    # the official peridot (SM8635) and sm8550-common trees.
+    # One-arg _C2FenceFactory::CreateSyncFence(int), gone since A15:
+    'vendor/lib64/libqcodec2_core.so': blob_fixup()
+        .add_needed('libcodec2_shim.so'),
+    # android::binder::atrace_begin/atrace_end@LIBBINDER, hidden in libbinder:
+    (
+        'vendor/bin/qcc-vendor',
+        'vendor/bin/qms',
+        'vendor/bin/xtra-daemon',
+        'vendor/lib64/libcne.so',
+        'vendor/lib64/libqcc_sdk.so',
+        'vendor/lib64/libqms_client.so',
+        'vendor/lib64/vendor.libdpmframework.so',
+    ): blob_fixup()
+        .add_needed('libbinder_shim.so'),
+    # ion_close: A17's libdmabufheap no longer exports the ion_* symbols
+    # (AOSP 89460dd); libion.so still does.
+    'vendor/bin/hw/android.hardware.biometrics.face-service.face-isv': blob_fixup()
+        .add_needed('libion.so'),
+    # A17 installs the platform protobuf as libprotobuf-cpp-full-6.33.5.so; the
+    # blob was built against 21.7, which compat provides on system_ext.
+    'system_ext/lib64/vendor.qti.hardware.qccsyshal@1.2-halimpl.so': blob_fixup()
+        .replace_needed('libprotobuf-cpp-full.so', 'libprotobuf-cpp-full-21.7.so'),
     # Every common-tree blob that links graphics.allocator V1 while the graph
     # resolves to V2. Found by readelf-ing every entry in proprietary-files.txt --
     # 53 of them, almost all the camera stack. Rescan after any widening
