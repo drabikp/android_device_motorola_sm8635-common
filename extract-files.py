@@ -297,6 +297,20 @@ blob_fixups: blob_fixups_user_type = {
             'android.hardware.bluetooth.audio-V3-ndk.so',
             'android.hardware.bluetooth.audio-V5-ndk.so'
     ),
+    # Android 17's libgui grew a trailing std::optional<BufferFreedCallback>
+    # parameter on BufferItemConsumer::acquireBuffer/releaseBuffer
+    # (frameworks/native libs/gui/include/gui/BufferItemConsumer.h), so the old
+    # mangled names are gone. This blob imports exactly those two:
+    #   _ZN7android18BufferItemConsumer13acquireBufferEPNS_10BufferItemElb
+    #   _ZN7android18BufferItemConsumer13releaseBufferERKNS_10BufferItemERKNS_2spINS_5FenceEEE
+    # (llvm-readelf --dyn-syms on the W1UXS36H copy). It is DT_NEEDED by the
+    # camera components, so an unresolved symbol here takes the whole camera
+    # provider down, not just the desktop helper. hardware/lineage/compat
+    # (924cf29b0d) provides both as forwarders in libgui_buffer_shim_vendor; this
+    # is the same fix Motorola's rtwo applied on lineage-24.0 (90de2f0d7b) for
+    # the same Motorola library. The shim module only exists on 24.0.
+    'vendor/lib64/libmot_chi_desktop_helper.so': blob_fixup()
+        .add_needed('libgui_buffer_shim_vendor.so'),
     # Every common-tree blob that links graphics.allocator V1 while the graph
     # resolves to V2. Found by readelf-ing every entry in proprietary-files.txt --
     # 53 of them, almost all the camera stack. Rescan after any widening
