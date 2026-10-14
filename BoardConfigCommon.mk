@@ -511,9 +511,10 @@ BOARD_VENDOR_KERNEL_MODULES_BLOCKLIST_FILE := $(COMMON_PATH)/modules/modules.blo
 # The script only globs `*`, so any single subdirectory would satisfy it, but
 # matching stock keeps modprobe's own version handling honest.
 #
-# ⚠️ This file is now ALSO the kernel/module consistency contract: Android.mk in
-# this directory asserts that TARGET_PREBUILT_KERNEL reports exactly this
-# version and fails the build otherwise. An earlier revision of this comment
+# ⚠️ (Prebuilt era, kept for the lesson.) This file was ALSO the kernel/module
+# consistency contract: Android.mk in this directory asserted that
+# TARGET_PREBUILT_KERNEL reported exactly this version and failed the build
+# otherwise. Both the assertion and the Android.mk are gone with the source build. An earlier revision of this comment
 # said the mismatch (6.1.128 Image vs 6.1.145 modules) was harmless because the
 # KMI generation matched and "they load fine". That was wrong and it cost WiFi,
 # Bluetooth and mobile data: these modules are SIGNED, and the kernel refuses a
