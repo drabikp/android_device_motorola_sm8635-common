@@ -54,17 +54,20 @@ TARGET_SUPPORTS_64_BIT_APPS := true
 # ran on the prebuilt; KMI-invisible: 20,475 CRC matches / 0 mismatches vs
 # the shipped module set). TARGET_NO_KERNEL_OVERRIDE (a GSI/Cuttlefish-only
 # variable; 0 physical devices upstream) is GONE -- kernel.mk now runs.
-# ⚠️ TARGET_KERNEL_VERSION gates GKI_SUFFIX (kernel.mk:140-144, needs 5.15 <= v
-# <= 6.1 and BOARD_USES_QCOM_HARDWARE). Unset, GKI_SUFFIX is empty and
+# ⚠️ TARGET_KERNEL_VERSION gates GKI_SUFFIX (kernel.mk:137-143 on lineage-24.0,
+# needs 5.15 <= v <= 6.1 and BOARD_USES_QCOM_HARDWARE). Unset, GKI_SUFFIX is empty and
 # system_dlkm modules install FLAT into lib/modules/ -- but stock's loader,
 # /vendor/bin/system_dlkm_modprobe.sh:15, tests `[ ! -e ${dir}/*/modules.load ]`
 # and modprobes with `-d ${dir}/*/`, i.e. it REQUIRES a versioned subdirectory
 # and silently loads nothing without one. With this set the modules land in
-# lib/modules/android16-6.1/ and the glob matches. This is the same failure the
+# lib/modules/android$(PLATFORM_VERSION)-6.1/ and the glob matches. The name
+# follows the PLATFORM: android16-6.1 on 23.2, android17-6.1 on 24.0. That is
+# harmless because the loader globs `*` and an OTA rewrites system_dlkm whole,
+# but do not grep for a fixed directory name. This is the same failure the
 # old SYSTEM_DLKM_KVER block existed to prevent.
 TARGET_KERNEL_VERSION := 6.1
 # Set GKI_SUFFIX directly rather than via BOARD_USES_QCOM_HARDWARE. That flag
-# would satisfy kernel.mk:139-144's gate, but it also pulls in
+# would satisfy kernel.mk's gate (above), but it also pulls in
 # vendor/lineage/build/core/qcom_target.mk's soong namespaces, which collide
 # with our extracted blobs:
 #   error: vendor/motorola/sm8635-common/Android.bp:32375:1: module

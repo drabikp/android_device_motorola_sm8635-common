@@ -1,7 +1,7 @@
 <!-- Device VINTF manifest for Motorola SM8635 (arcfox).
      Copied from the shipping firmware's /vendor/etc/vintf/manifest_pineapple.xml.
      The stock <sepolicy> block was REMOVED: it declares 34.0, and assemble_vintf
-     injects BOARD_SEPOLICY_VERS (202504 on LineageOS 23.2) itself, failing with
+     injects BOARD_SEPOLICY_VERS (202504 on LineageOS 23.2, 202604 on 24.0) itself, failing with
      "Cannot override existing value 34.0 with BOARD_SEPOLICY_VERS". -->
 <!--
     Input:
