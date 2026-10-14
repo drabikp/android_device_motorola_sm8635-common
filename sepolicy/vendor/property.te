@@ -47,7 +47,12 @@ get_prop(domain, vendor_mot_product_prop)
 get_prop({ domain -coredomain -appdomain }, vendor_mot_hw_prop)
 get_prop({ domain -coredomain -appdomain }, vendor_mot_init_prop)
 get_prop({ system_server zygote surfaceflinger bootanim shell dumpstate }, vendor_mot_hw_prop)
-get_prop({ platform_app priv_app system_app }, vendor_mot_hw_prop)
+# Android 17 splits the platform-signed and privileged app domains by
+# targetSdkVersion: apps targeting <= 36 now run as platform_app_36 /
+# priv_app_36 (system/sepolicy private/seapp_contexts), and every stock QTI and
+# Motorola APK we ship targets <= 36. The *_all attributes cover both halves,
+# which is what platform_app / priv_app meant on 23.2.
+get_prop({ platform_app_all priv_app_all system_app }, vendor_mot_hw_prop)
 get_prop({ surfaceflinger dumpstate }, vendor_mot_init_prop)
 
 # ---------------------------------------------------------------------------
