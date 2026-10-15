@@ -578,6 +578,45 @@ EOF
     return $r
 }
 
+# --- fixup 10: the IMS video codec allocates an Android 16-sized Surface ----------
+#
+# lib-imsvideocodec.so (system_ext, built against A16) in
+# VTPlayer::setFarEndSurface():
+#
+#     mov w0,#0x478 ; bl operator new         // 1144 = sizeof(android::Surface) in A16
+#     bl android::Surface::Surface(sp<IGraphicBufferProducer> const&, bool, sp<IBinder> const&)
+#
+# The constructor is OUR libgui's, and on Android 17 it builds a 1160-byte object
+# (measured at every allocation site in A17 libgui/libgui_vendor), so it writes 16
+# bytes past the block: the same bug class as fixup 9, on the first IMS video call.
+# Afterwards the blob only touches the object's ANativeWindow header (common at
+# +0x10, incRef at +0x38), which A17 did not move, so a bigger block is all it
+# needs: mov w0,#0x800 (2048). The instruction is unique in the binary.
+# Hash-pinned like fixup 9. check-blob-symbols.py --alloc-check (workspace
+# los24-port/blob-abi) re-measures Surface against each build.
+fix_imsvideo_surface_alloc() {
+    local f="$TOP/vendor/motorola/sm8635-common/proprietary/system_ext/lib64/lib-imsvideocodec.so"
+    local stock=7e6c54838972040a628d0df90942b3b4969873e5d631adafde90daaa84634a01
+    local patched=a1ce7cf9b3288a6cd8175d58067e4ae6c2e7a4bb84450658886fe0618c2b0a02
+    local cur
+    if [ ! -s "$f" ]; then echo "  lib-imsvideocodec.so: missing or empty -- re-run extract-files.py"; return 1; fi
+    cur=$(sha256sum "$f" | cut -d' ' -f1)
+    if [ "$cur" = "$patched" ]; then
+        echo "  lib-imsvideocodec.so: Surface allocation already 2048 bytes (ok)"
+    elif [ "$cur" = "$stock" ]; then
+        if [ "$CHECK" = 1 ]; then echo "  lib-imsvideocodec.so: still allocates 1144 bytes -- FIXUP MISSING"; return 1; fi
+        # mov w0,#0x478 (00 8f 80 52) -> mov w0,#0x800 (00 00 81 52) at file offset 0x1edd4.
+        printf '\x00\x00\x81\x52' | dd of="$f" bs=1 seek=$((0x1edd4)) conv=notrunc status=none
+        if [ "$(sha256sum "$f" | cut -d' ' -f1)" = "$patched" ]; then
+            echo "  lib-imsvideocodec.so: Surface allocation raised to 2048 bytes"
+        else
+            echo "  lib-imsvideocodec.so: patch did not produce the expected hash"; return 1
+        fi
+    else
+        echo "  lib-imsvideocodec.so: unknown build (sha256 $cur) -- re-derive the allocation site before patching"; return 1
+    fi
+}
+
 echo "fix-vendor-blobs:"
 fix_allocator || rc=1
 fix_wlan_ini  || rc=1
@@ -588,4 +627,5 @@ fix_manifest_ese1 || rc=1
 fix_sehal_rc || rc=1
 fix_codec2_seccomp || rc=1
 fix_codec2_store_alloc || rc=1
+fix_imsvideo_surface_alloc || rc=1
 exit $rc
