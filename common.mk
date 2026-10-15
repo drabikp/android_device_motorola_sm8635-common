@@ -545,6 +545,21 @@ PRODUCT_PACKAGES += \
     init.arcfox-nfc.rc
 
 
+# Audio HIDL ABI: build the VENDOR audio util/impl libraries with the struct
+# layouts Motorola's Android 14 audio HAL blobs were compiled against. The
+# stock android.hardware.audio@7.1-impl.so calls our source-built
+# CoreUtils::sourceMetadataToHalV7() and HidlUtils::audioPortConfig*ToHal()
+# with its own buffers:
+# - playback_track_metadata_v7 grew 64 bytes on Android 17 (codec_provenance).
+#   Without the opt-out the 24.0 audio HAL aborted on every output-stream open
+#   ("St12length_error: vector" in audio.primary.pineapple.so
+#   out_update_source_metadata_v7), system_server never finished booting.
+# - audio_port_config_device_ext grew in 15 QPR2 (speaker_layout_channel_mask);
+#   23.2 shipped without this opt-out. Motorola's sm8550-common and peridot set it.
+# System-side code keeps the full structs; it talks to the HAL over HIDL only.
+$(call soong_config_set_bool,android_hardware_audio,skip_speaker_layout_channel_mask_field,true)
+$(call soong_config_set_bool,android_hardware_audio,skip_codec_provenance_field,true)
+
 # Bluetooth audio provider: Motorola's, and ONLY Motorola's.
 #
 # The AIDL IBluetoothAudioProviderFactory/default must be declared, or
