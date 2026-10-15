@@ -45,3 +45,22 @@ allow hal_graphics_composer_default vendor_hal_sensorext_service:service_manager
 # hal_graphics_composer_service/_hwservice (already avoided by using our own
 # vendor_hal_sensorext_service type above) and hal_graphics_composer_server fork.
 binder_call(hal_sensors_default, hal_graphics_composer_default)
+
+# The same process also CALLS the display HAL, which is the composer process and
+# so the same domain: qdutils asks display.qservice for the active config and
+# panel size, and DisplayConfig AIDL is looked up through an INTERFACE_TRANSACTION.
+# Stock allows exactly this, (allow hal_graphics_composer_default
+# hal_graphics_composer_default (binder (call transfer))) in its vendor_sepolicy.cil,
+# but ours denied it:
+#
+#   avc: denied { call } scontext=u:r:hal_graphics_composer_default:s0
+#        tcontext=u:r:hal_graphics_composer_default:s0 tclass=binder
+#   E qdutils : getDisplayAttributes() failed with err -2147483646
+#   E SENSOREXT_DISPLAY_BUF: failed to create descriptor
+#   D SENSOREXT_ALS_COMP: screenshot error, not report lux
+#
+# On 24.0 the ALS compensation reaches that screenshot step and drops the reading,
+# so the display sees mAmbientLux=-1 and auto-brightness gets no lux (2026-10-15).
+# That never happens on 23.2. Under setenforce 0 the same process got the active
+# config (1080x2640), created the buffer descriptor, and initialized DisplayConfig AIDL.
+binder_call(hal_graphics_composer_default, hal_graphics_composer_default)
