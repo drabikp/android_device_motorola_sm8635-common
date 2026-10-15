@@ -468,6 +468,7 @@ fix_sehal_rc() {
 # calls (libdebuggerd/tombstone_proto.cpp), and setsockopt. So the dumper
 # itself is killed and the real fault stays invisible. AOSP's media policies
 # @include the crash_dump policy for exactly this reason; allow the two here.
+# Android 17 adds getppid, which every vendor policy needs: see fixup 11.
 fix_codec2_seccomp() {
     local dir="$TOP/vendor/motorola/sm8635-common/proprietary/vendor/etc/seccomp_policy"
     local f s r=0
@@ -617,6 +618,36 @@ fix_imsvideo_surface_alloc() {
     fi
 }
 
+# --- fixup 11: let every sandboxed vendor daemon call getppid ----------------------
+#
+# Android 17's debuggerd signal handler calls getppid() inside the process being
+# dumped, before it forks crash_dump (system/core cb45138af, "Add ppid to
+# debuggerd tombstones"; debuggerd_dispatch_pseudothread). Of the 29 stock vendor
+# seccomp policies only qti-systemd's allows it, so on 24.0 a dump request kills
+# a sandboxed daemon with SIGSYS instead of dumping it, and a real crash leaves
+# no tombstone. A bugreport, or the native stacks an ANR collects, killed both
+# Codec2 HALs mid-playback (2026-10-15). With getppid allowed they survive
+# `debuggerd -b` and write a full tombstone again, as on 23.2. Some stock
+# policies also lack other dump-path calls (pipe2, process_vm_readv, recvmsg,
+# rt_tgsigqueueinfo); those daemons died on a dump on 23.2 too, which this
+# leaves alone. The Codec2 ext policies are merged into their base policy at
+# load time, so they are skipped.
+fix_seccomp_getppid() {
+    local dir="$TOP/vendor/motorola/sm8635-common/proprietary/vendor/etc/seccomp_policy"
+    local f n=0 r=0
+    if ! compgen -G "$dir/*.policy" > /dev/null; then echo "  seccomp_policy: no policies -- re-run extract-files.py"; return 1; fi
+    for f in "$dir"/*.policy; do
+        case "$(basename "$f")" in *.ext-*) continue ;; esac
+        /usr/bin/grep -qE '^getppid:' "$f" && continue
+        if [ "$CHECK" = 1 ]; then echo "  $(basename "$f"): getppid not allowed -- FIXUP MISSING"; r=1; continue; fi
+        [ -n "$(tail -c1 "$f")" ] && echo >> "$f"
+        printf 'getppid: 1\n' >> "$f"
+        n=$((n + 1))
+    done
+    [ "$CHECK" = 1 ] || echo "  seccomp_policy: allowed getppid in $n policies"
+    return $r
+}
+
 echo "fix-vendor-blobs:"
 fix_allocator || rc=1
 fix_wlan_ini  || rc=1
@@ -628,4 +659,5 @@ fix_sehal_rc || rc=1
 fix_codec2_seccomp || rc=1
 fix_codec2_store_alloc || rc=1
 fix_imsvideo_surface_alloc || rc=1
+fix_seccomp_getppid || rc=1
 exit $rc
