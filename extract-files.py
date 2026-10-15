@@ -167,6 +167,14 @@ blob_fixups: blob_fixups_user_type = {
     # same way, add its policy here rather than guessing ahead of the evidence.
     'vendor/etc/seccomp_policy/qsap_qapeservice.policy': blob_fixup()
         .add_line_if_missing('lseek: 1'),
+    # Logcat named ATFWD-daemon next (2026-10-15), killed 5 s after every start
+    # since boot, about 2400 times in 3 h:
+    #   E ATFWD-daemon: libminijail[10637]: blocked syscall: lseek
+    # On 23.2 the same daemon stayed up for the whole boot. With lseek allowed it
+    # registers vendor.qti.hardware.radio.atfwd.IAtFwd/AtFwdAidl and its six AT
+    # commands, then waits, as it did on 23.2.
+    'vendor/etc/seccomp_policy/atfwd@2.0.policy': blob_fixup()
+        .add_line_if_missing('lseek: 1'),
     'vendor/etc/vintf/manifest/bluetooth_audio.xml': blob_fixup()
         .regex_replace('<version>3</version>', '<version>5</version>'),
     'vendor/etc/vintf/manifest/face-default_3.xml': blob_fixup()
