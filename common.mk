@@ -534,6 +534,13 @@ PRODUCT_PACKAGES += \
 PRODUCT_PACKAGES += \
     SM8635WifiOverlay
 
+# Per-carrier IMS settings, generated from Motorola's stock CarrierSettings
+# (rro_overlays/CarrierConfigOverlay/generate-vendor-xml.py). The IMS stack works,
+# but VoLTE and Wi-Fi calling only appear for carriers whose carrier config allows
+# them: AOSP CarrierConfig covers about 70, stock about 2200.
+PRODUCT_PACKAGES += \
+    SM8635CarrierConfigOverlay
+
 
 # NFC. Everything already ships -- the ST HAL, nfc_nci.st21nfc.st.so, both
 # firmware blobs, all libnfc-hal-st*.conf, the SELinux labels -- and

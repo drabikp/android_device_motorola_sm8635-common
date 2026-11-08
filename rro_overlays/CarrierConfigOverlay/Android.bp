@@ -1,0 +1,22 @@
+//
+// Runtime resource overlay that gives CarrierConfig the per-carrier IMS
+// settings (VoLTE, Wi-Fi calling, video calling, VoNR, RTT) Motorola ships for
+// this phone. res/xml/vendor.xml is GENERATED from the stock CarrierSettings
+// files by generate-vendor-xml.py in this directory; see that script for why
+// and how. AOSP's own res/xml/vendor.xml is empty, so nothing is lost by
+// replacing it.
+//
+// An RRO on the vendor partition, like SM8635WifiOverlay, keeps this data with
+// the vendor blobs it was derived from. Sony's and OnePlus's sm8650-common
+// ship their carrier settings the same way.
+//
+package {
+    default_applicable_licenses: ["Android-Apache-2.0"],
+}
+
+runtime_resource_overlay {
+    name: "SM8635CarrierConfigOverlay",
+    resource_dirs: ["res"],
+    vendor: true,
+    sdk_version: "current",
+}

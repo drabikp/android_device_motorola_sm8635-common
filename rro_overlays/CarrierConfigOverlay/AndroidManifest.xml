@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    CarrierConfig declares no overlayable block, so a preinstalled overlay may
+    replace any of its resources and no targetName is needed. isStatic keeps it
+    permanently enabled.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.android.carrierconfig.overlay.sm8635"
+    android:versionCode="1"
+    android:versionName="1.0">
+
+    <application android:hasCode="false" />
+
+    <overlay
+        android:targetPackage="com.android.carrierconfig"
+        android:priority="0"
+        android:isStatic="true" />
+
+</manifest>
