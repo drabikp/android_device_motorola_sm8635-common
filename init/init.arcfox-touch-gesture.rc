@@ -102,6 +102,31 @@
 # focaltech on other panel suppliers, spi1.0). On a flip the cover panel is the
 # one the user actually taps with the phone shut.
 
+# ---------------------------------------------------------------------------
+# WHY IT IS ARMED AT boot, NOT ONLY AT boot_completed (measured 2026-11-10)
+# ---------------------------------------------------------------------------
+# ts_mmi_panel_off() chooses gesture or deep sleep at each panel-off and never
+# revisits the choice. In deep sleep the Goodix driver powers the IC down
+# (goodix_ts_power_off), and the IC stays down until that panel is next turned
+# ON, whatever is written here afterwards.
+#
+# Booting open, system_server turns the cover panel off 0.9 s BEFORE
+# sys.boot_completed. So the cover touch was powered down for the whole boot.
+# Folding while asleep takes the cover straight to doze, never ON, so double
+# tap on the cover stayed dead until the power key woke it once.
+#
+# `on boot` runs about 9 s before that panel-off. The touch class devices
+# register asynchronously, though: the inner Goodix loads its config in
+# goodix_later_init_thread, about 0.3 s after `on boot`. So wait for each
+# node. The timeout bounds the stall if a panel's touch never registers. The
+# boot_completed write below stays as a fallback for that case: it covers
+# every panel-off after it.
+on boot && property:ro.vendor.arcfox.dt2w=1
+    wait /sys/class/touchscreen/secondary/gesture 3
+    write /sys/class/touchscreen/secondary/gesture 49
+    wait /sys/class/touchscreen/primary/gesture 3
+    write /sys/class/touchscreen/primary/gesture 49
+
 on property:sys.boot_completed=1 && property:ro.vendor.arcfox.dt2w=1
     write /sys/class/touchscreen/primary/gesture 49
     write /sys/class/touchscreen/secondary/gesture 49
