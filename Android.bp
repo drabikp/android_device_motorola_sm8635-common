@@ -136,6 +136,16 @@ prebuilt_etc {
     vendor: true,
 }
 
+// Reloads the GKI zram module that Motorola's init.mmi.overlay.rc unloads at
+// early-init to make room for moto_swap.ko, which this port cannot ship. Without
+// it the phone has no swap at all. See the file.
+prebuilt_etc {
+    name: "init.arcfox-zram.rc",
+    src: "init/init.arcfox-zram.rc",
+    sub_dir: "init",
+    vendor: true,
+}
+
 
 // Face unlock VINTF declaration, replacing the hand-edited blob. See the file
 // for why version 3 and not the 4 the vendor tree had been carrying.

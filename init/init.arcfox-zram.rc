@@ -1,0 +1,37 @@
+# Swap (zram) -- reload the GKI zram module that Motorola's rc unloads.
+#
+# Found 2026-11-22: the phone ran with NO swap at all (SwapTotal 0, no
+# /sys/block/zram0), on 24.0 and, by the same configuration, on every 23.2
+# build. Stock swaps to a zram device of 65% of RAM.
+#
+# Stock's chain (all three files are shipped byte-identical to stock):
+#   1. init.qti.kernel.rc       on early-init: exec_start gki.modprobe loads the
+#                               system_dlkm modules, zram and zsmalloc included.
+#   2. init.mmi.overlay.rc      on early-init: modprobe -r zram (unloads the GKI
+#                               zram, and zsmalloc with it), then on late-init:
+#                               modprobe moto_swap, Motorola's own zram driver
+#                               ("Compressed RAM Block Device", zram-6.1 plus
+#                               hybridswap), which provides zram0.
+#   3. init.mmi.rc              on sys.boot_completed=1 (with
+#                               ro.vendor.zram.product_swapon unset):
+#                               swapon_all /vendor/etc/fstab.qcom, whose zram0
+#                               entry is zramsize=65%.
+#
+# This port cannot ship moto_swap.ko: its kernel-side hybridswap memcg fields
+# were never published, so it cannot be built from source, and the stock
+# prebuilt does not match our kernel (BoardConfigCommon.mk, "NOT LISTED:
+# moto_swap"). Step 2 therefore removes zram and nothing replaces it, so step 3
+# finds no zram0 and silently swaps nothing.
+#
+# Fix: at late-init, where stock loads moto_swap, re-run the same GKI modprobe
+# service. It reloads zram and zsmalloc (the already-loaded modules are no-ops),
+# in the same vendor_modprobe domain and from the same module directory as at
+# early-init, so no new SELinux rule or hard-coded module path is needed. The
+# stock swapon_all in step 3 then sets up zram0 from fstab.qcom unchanged.
+#
+# Android 17's mmd can also manage zram (mmd.zram.enabled), but its zram setup is
+# off by default and stock's swapon_all already does the job; enabling both
+# would set up zram twice. mmd stays as AOSP ships it.
+
+on late-init
+    exec_start gki.modprobe

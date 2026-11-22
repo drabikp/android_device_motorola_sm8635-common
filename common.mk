@@ -449,6 +449,12 @@ PRODUCT_PACKAGES += \
 PRODUCT_PACKAGES += \
     init.arcfox-touch-gesture.rc
 
+# Swap: reload the GKI zram that Motorola's rc unloads for the moto_swap.ko we
+# cannot ship; stock's own post_boot script then sets up zram0 (6 GiB). Without
+# this the phone has no swap. See init/init.arcfox-zram.rc.
+PRODUCT_PACKAGES += \
+    init.arcfox-zram.rc
+
 PRODUCT_COPY_FILES += \
     $(COMMON_PATH)/keylayout/double-tap.kl:$(TARGET_COPY_OUT_VENDOR)/usr/keylayout/double-tap.kl \
     $(COMMON_PATH)/keylayout/s-double-tap.kl:$(TARGET_COPY_OUT_VENDOR)/usr/keylayout/s-double-tap.kl
