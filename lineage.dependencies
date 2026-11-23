@@ -1,1 +1,10 @@
-[]
+[
+  {
+    "repository": "android_kernel_motorola_sm8635",
+    "target_path": "kernel/motorola/sm8635"
+  },
+  {
+    "repository": "android_kernel_motorola_sm8635-devicetrees",
+    "target_path": "kernel/motorola/sm8635-devicetrees"
+  }
+]
