@@ -140,8 +140,8 @@ set_prop(hal_camera_default, vendor_camera_ledtorchmode_prop)
 # matrix, registered by nobody. The declared-but-absent hazard this paragraph
 # warned about CREATING was one we were already in.
 #
-# It is removed now -- fix-vendor-blobs.sh fixup 5 prunes this and eight other
-# phantom declarations out of the blob. With that done the original advice holds
+# It is removed now -- the manifest_cliffs.xml fixup in extract-files.py
+# prunes this and eight other phantom declarations out of the blob. With that done the original advice holds
 # again, for the right reason: labelling the binary and adding the
 # hwservice_contexts entry without RESTORING a VINTF declaration would put us
 # back into the hazard this tree has already paid for twice. ICameraDesktop is Motorola's "Ready For" desktop-mode

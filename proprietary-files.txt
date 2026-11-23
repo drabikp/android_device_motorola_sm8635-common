@@ -355,8 +355,8 @@ vendor/lib64/libeai_float.so
 vendor/lib64/liblistensoundmodel2vendor.so
 system_ext/lib64/libmmosal.so
 system_ext/lib64/libmmparser_lite.so
-vendor/bin/hw/vendor.qti.media.c2@1.0-service
-vendor/bin/hw/vendor.qti.media.c2audio@1.0-service
+vendor/bin/hw/vendor.qti.media.c2@1.0-service|b20d45c1523c925c6b17456a5f7b011052e3daed|fba8c98018e9081bdf1d792572b669b9cdd02b7c
+vendor/bin/hw/vendor.qti.media.c2audio@1.0-service|35867da3d310c82fd9cd45b73666e7aa2dfddd21|2533d33a07b9c87184d807b0d86b8c14a7e6e17a
 vendor/bin/init.qti.media.sh
 vendor/etc/init/init.qti.media.rc
 vendor/etc/seccomp_policy/c2audio.vendor.base-arm.policy
@@ -747,7 +747,7 @@ system_ext/framework/vendor.qti.ims.rcsuce-V1.0-java.jar
 system_ext/framework/vendor.qti.ims.rcsuce-V1.1-java.jar
 system_ext/framework/vendor.qti.ims.rcsuce-V1.2-java.jar
 system_ext/framework/vendor.qti.ims.rcsuceaidlservice-V1-java.jar
-system_ext/lib64/lib-imsvideocodec.so
+system_ext/lib64/lib-imsvideocodec.so|f9972c0f2c2d6d9ecc4a41b26c86ba32196802dd|3f7e50ee4b95061f9c9210a3502c513fc3ca748b
 system_ext/lib64/lib-imsvt.so
 system_ext/lib64/lib-imsvtextutils.so
 system_ext/lib64/lib-imsvtutils.so
@@ -2474,10 +2474,12 @@ vendor/etc/wifi/wpa_supplicant_overlay.conf
 # Shipped as four real files rather than links: the firmware loader reads them
 # during early boot and a plain file has no resolution order to get wrong.
 # Do not "clean this up" back into symlinks without re-reading that trap.
+# The firmware copies are extracted from the link TARGETS (src:dst), because
+# the links themselves are absolute and do not resolve on the build host.
 vendor/etc/wifi/kiwi_v2/WCNSS_prc_cfg.ini
 vendor/etc/wifi/kiwi_v2/WCNSS_qcom_cfg.ini
-vendor/firmware/wlan/qca_cld/kiwi_v2/WCNSS_prc_cfg.ini
-vendor/firmware/wlan/qca_cld/kiwi_v2/WCNSS_qcom_cfg.ini
+vendor/etc/wifi/kiwi_v2/WCNSS_prc_cfg.ini:vendor/firmware/wlan/qca_cld/kiwi_v2/WCNSS_prc_cfg.ini
+vendor/etc/wifi/kiwi_v2/WCNSS_qcom_cfg.ini:vendor/firmware/wlan/qca_cld/kiwi_v2/WCNSS_qcom_cfg.ini
 vendor/firmware/cps4041.bin
 vendor/firmware/cps4041_2nd.bin
 vendor/firmware/csot_gdx_cfg_group.bin
@@ -3024,27 +3026,9 @@ vendor/lib64/libsensorndkbridge.so;DISABLE_DEPS
 # still declaring vendor.zuialarm.hardware.alarm@1.0::IAlarm/default with
 # nothing serving it.
 #
-# STILL OUTSTANDING, and NOT fixed here: vendor/etc/vintf/manifest_cliffs.xml is
-# a stock blob shipped byte-identical (diffed), and ro.boot.product.vendor.sku is
-# `cliffs`, so it is the manifest libvintf actually reads. It still declares SIX
-# interfaces nothing on this build can serve -- MEASURED with `vintf dm` against
-# `service list` + `lshal` on the live device:
-#     com.motorola.hardware.display.touch@1.2::IMotTouch/default
-#     motorola.hardware.camera.desktop@1.0::ICameraDesktop/default
-#     motorola.hardware.camera.desktop@2.0::ICameraDesktop/default
-#     motorola.hardware.health.storage@1.0::IMotStorage/default
-#     vendor.zui.hardware.ifaa@1.0::IIFAADevice/default
-#     vendor.zuialarm.hardware.alarm@1.0::IAlarm/default
-# All six are optional="true" in device_framework_matrix.xml (verified), so
-# stripping them does not regress checkvintf. camera.desktop is the one with a
-# real client: hwservicemanager issues ctl.interface_start for
-# motorola.hardware.camera.desktop@2.0::ICameraDesktop/default TWICE per boot on
-# behalf of vendor/lib64/libmot_chi_desktop_helper.so inside the camera provider
-# (after4.txt:4316 and :5309). It is bounded -- two attempts, then the provider
-# carries on -- but it is the same declared-and-unserved shape that hung
-# mediaserver on the Dolby c2 stores. Because manifest_cliffs.xml is a blob,
-# editing it must be a fix-vendor-blobs.sh fixup or the next extract-files.py
-# silently reverts it.
+# vendor/etc/vintf/manifest_cliffs.xml is the manifest libvintf actually reads
+# (ro.boot.product.vendor.sku is `cliffs`). The HAL declarations nothing on this
+# build can serve are removed by its blob fixup in extract-files.py; see there.
 
 # --- Dolby DMS (Atmos / DAX): init rc dropped 2026-09-01 -----------------------
 # Removed ONLY vendor/etc/init/dms-service.rc. The service can never work here:

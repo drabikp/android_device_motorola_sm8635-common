@@ -5,6 +5,9 @@
 #
 # Motorola SM8635 (Snapdragon 8s Gen 3, "pineapple") common tree.
 
+import re
+import sqlite3
+
 from extract_utils.fixups_blob import (
     blob_fixup,
     blob_fixups_user_type,
@@ -54,6 +57,68 @@ lib_fixups: lib_fixups_user_type = {
     # removal keeps every other edge intact.
     'android.hardware.wifi-V1-ndk': lib_fixup_remove,
 }
+
+
+def allow_syscalls(*syscalls: str):
+    """Append `<syscall>: 1` to a seccomp policy for each syscall it lacks."""
+
+    def impl(ctx, file, file_path, *args, **kwargs):
+        with open(file_path, 'r+', newline='', encoding='utf-8') as f:
+            data = f.read()
+            allowed = {line.split(':')[0] for line in data.splitlines()}
+            missing = [s for s in syscalls if s not in allowed]
+            if not missing:
+                return
+            if data and not data.endswith('\n'):
+                f.write('\n')
+            f.write(''.join(f'{s}: 1\n' for s in missing))
+
+    return impl
+
+
+def drop_vintf_hals(*names: str):
+    """Remove the <hal> blocks with these <name>s from a VINTF manifest."""
+
+    def impl(ctx, file, file_path, *args, **kwargs):
+        with open(file_path, newline='', encoding='utf-8') as f:
+            data = f.read()
+        for block in re.findall(r'[ \t]*<hal\b.*?</hal>\n', data, re.S):
+            name = re.search(r'<name>([^<]+)</name>', block)
+            if name and name.group(1) in names:
+                data = data.replace(block, '', 1)
+        with open(file_path, 'w', newline='', encoding='utf-8') as f:
+            f.write(data)
+
+    return impl
+
+
+def disable_qcril_poweron_opt(ctx, file, file_path, *args, **kwargs):
+    prop = 'persist.vendor.radio.poweron_opt'
+    con = sqlite3.connect(file_path)
+    try:
+        rows = con.execute(
+            'SELECT value FROM qcril_properties_table WHERE property = ?',
+            (prop,),
+        ).fetchall()
+        if len(rows) != 1:
+            raise ValueError(f'{file.dst}: no {prop} row; re-derive this fixup')
+        if str(rows[0][0]) != '0':
+            with con:
+                con.execute(
+                    "UPDATE qcril_properties_table SET value = '0' "
+                    'WHERE property = ?',
+                    (prop,),
+                )
+    finally:
+        con.close()
+
+
+# ISecureElement/eSE1, as declared by manifest_cliffs.xml and
+# manifest_pineapple.xml (see the eSE1 fixup below).
+ESE1_HAL = (
+    r'[ \t]*<hal\b[^>]*>\s*<name>android\.hardware\.secure_element</name>\s*'
+    r'<fqname>ISecureElement/eSE1</fqname>\s*</hal>\n'
+)
 
 blob_fixups: blob_fixups_user_type = {
     # --- tinyxml2 ABI break: THIS ONE STOPPED THE BOOT ------------------------
@@ -150,12 +215,13 @@ blob_fixups: blob_fixups_user_type = {
     # of these calls -- so allow all three, or the SIGSYS just moves along by one.
     'vendor/etc/seccomp_policy/gnss@2.0-qsap-location.policy': blob_fixup()
         .regex_replace(
-            r'gettid: 1',
+            r'gettid: 1(?!\nsched_get_priority_min: 1)',
             'gettid: 1\n'
             'sched_get_priority_min: 1\n'
             'sched_get_priority_max: 1\n'
             'sched_setscheduler: 1',
-    ),
+        )
+        .call(allow_syscalls('getppid'), need_tmp_dir=False),
     # Same class as the qsap_location entry above, new with LineageOS 24.0. The
     # stock policy (byte-identical to the W1UXS36H dump) allows no lseek, and on
     # Android 17 the vendor libraries we build from source make that call, so
@@ -166,7 +232,8 @@ blob_fixups: blob_fixups_user_type = {
     # vendor.qsap.qapeservice.rc). If logcat names another qsap_* daemon the
     # same way, add its policy here rather than guessing ahead of the evidence.
     'vendor/etc/seccomp_policy/qsap_qapeservice.policy': blob_fixup()
-        .add_line_if_missing('lseek: 1'),
+        .add_line_if_missing('lseek: 1')
+        .call(allow_syscalls('getppid'), need_tmp_dir=False),
     # Logcat named ATFWD-daemon next (2026-10-15), killed 5 s after every start
     # since boot, about 2400 times in 3 h:
     #   E ATFWD-daemon: libminijail[10637]: blocked syscall: lseek
@@ -174,7 +241,8 @@ blob_fixups: blob_fixups_user_type = {
     # registers vendor.qti.hardware.radio.atfwd.IAtFwd/AtFwdAidl and its six AT
     # commands, then waits, as it did on 23.2.
     'vendor/etc/seccomp_policy/atfwd@2.0.policy': blob_fixup()
-        .add_line_if_missing('lseek: 1'),
+        .add_line_if_missing('lseek: 1')
+        .call(allow_syscalls('getppid'), need_tmp_dir=False),
     'vendor/etc/vintf/manifest/bluetooth_audio.xml': blob_fixup()
         .regex_replace('<version>3</version>', '<version>5</version>'),
     'vendor/etc/vintf/manifest/face-default_3.xml': blob_fixup()
@@ -419,6 +487,112 @@ blob_fixups: blob_fixups_user_type = {
     # android.hardware.graphics.composer3-V2-ndk.so, which is what the stock
     # composer was built against. Same reasoning as the keymint V2/V3 libs --
     # ship the version the blob wants instead of relinking it to another ABI.
+
+    # --- Moved here from the former fix-vendor-blobs.sh (2026-11-23) ---------
+    # proprietary-files.txt relocates these jars to system_ext, but the XML
+    # still names /system/framework, so SystemConfig ignored the library and
+    # org.codeaurora.ims ran without it.
+    'system_ext/etc/permissions/moto-telephony.xml': blob_fixup()
+        .regex_replace('"/system/framework/moto-telephony.jar"',
+                       '"/system_ext/framework/moto-telephony.jar"'),
+    'system_ext/etc/permissions/moto-ims-ext.xml': blob_fixup()
+        .regex_replace('"/system/framework/moto-ims-ext.jar"',
+                       '"/system_ext/framework/moto-ims-ext.jar"'),
+    # Inbound SMS: QCRIL buffers each MT SMS until the telephony UI reports
+    # ready ("ATEL UI status"), which never happens on this build, so every
+    # message was dropped. Power-on optimisation is a qcril_properties_table
+    # row, not an Android property (setprop has no effect); init.qcom.rc seeds
+    # /data from this prebuilt after a wipe. The real cure would be making
+    # QtiTelephony's PowerUpOptimization send ATEL ready
+    # (`logcat | grep "Not sending ATEL ready:"` names the missing condition).
+    'vendor/etc/qcril_database/qcrilNr.db': blob_fixup()
+        .call(disable_qcril_poweron_opt, need_tmp_dir=False),
+    # manifest_cliffs.xml is this SKU's VINTF manifest (libvintf reads
+    # manifest_$(sku).xml and stops), so declarations can only be removed here.
+    # 1. HALs whose init .rc files we do not ship: declared but never served,
+    #    clients wait for them. Restore an entry together with its .rc.
+    # 2. eSE1 (also in manifest_pineapple.xml): the HAL's eSE1 open always fails
+    #    and its recovery cold-resets the secure element that also hosts the
+    #    eUICC, so the eSIM stopped answering for ~4 min after every cold boot.
+    #    Nothing we ship uses eSE1 (the Thales StrongBox/weaver are not shipped).
+    'vendor/etc/vintf/manifest_cliffs.xml': blob_fixup()
+        .call(drop_vintf_hals(
+            'com.dsi.ant',
+            'com.motorola.hardware.display.touch',
+            'motorola.hardware.camera.desktop',
+            'motorola.hardware.health.storage',
+            'vendor.nxp.nxpnfc_aidl',
+            'vendor.qti.hardware.bluetooth_audio',
+            'vendor.qti.hardware.btconfigstore',
+            'vendor.qti.hardware.fm',
+            'vendor.zui.hardware.ifaa',
+        ), need_tmp_dir=False)
+        .regex_replace(ESE1_HAL, ''),
+    'vendor/etc/vintf/manifest_pineapple.xml': blob_fixup()
+        .regex_replace(ESE1_HAL, ''),
+    # With eSE1 undeclared the HAL aborts on its own registration, and its
+    # other instances (SIM1/SIM2) are served by qcrilNrd, so do not start it.
+    # The sys.ese.hal.restart trigger in the same file stays.
+    'vendor/etc/init/android.hardware.secure_element-service.qti.rc': blob_fixup()
+        .regex_replace(
+            r'(service vendor\.secure_element [^\n]*\n(?:    [^\n]*\n)*?'
+            r'    group nfc system\n)(?!    disabled\n)',
+            r'\1    disabled\n',
+        ),
+    # The stock Codec2 services allocate an Android 14-sized ComponentStore
+    # (`mov w0,#0x108`, 264 bytes) and construct it with our libcodec2_hidl,
+    # whose ComponentStore is 288 bytes: the constructor overwrote the next heap
+    # chunk and the services died in ~1 of 3 boots, sometimes taking
+    # mediaserver and system_server along. Allocate 512 bytes instead
+    # (`mov w0,#0x200`); main() only reaches the object through its vtable.
+    # The instruction is unique in each binary, and both are hash-pinned in
+    # proprietary-files.txt. arcfox-port scripts/check-codec2-store-size.py
+    # checks that a build's ComponentStore still fits in 512 bytes.
+    (
+        'vendor/bin/hw/vendor.qti.media.c2@1.0-service',
+        'vendor/bin/hw/vendor.qti.media.c2audio@1.0-service',
+    ): blob_fixup()
+        .sig_replace('00 21 80 52', '00 40 80 52'),
+    # Same bug class: built against Android 16, VTPlayer::setFarEndSurface()
+    # allocates 1144 bytes for an android::Surface that our Android 17 libgui
+    # constructs at 1160. Allocate 2048 (`mov w0,#0x800`); the blob only uses
+    # the ANativeWindow header afterwards. Unique instruction, hash-pinned.
+    'system_ext/lib64/lib-imsvideocodec.so': blob_fixup()
+        .sig_replace('00 8f 80 52', '00 00 81 52'),
+    # Seccomp. crash_dump runs inside the crashing process's filter, so the
+    # Codec2 policies also need uname and setsockopt or a crash leaves no
+    # tombstone. Android 17's debuggerd handler calls getppid in the dumped
+    # process, so without it any dump (a bugreport, an ANR's native stacks)
+    # killed the daemon instead. The ext policies are merged into their base
+    # policy at load time, and qti-systemd.policy already allows getppid.
+    (
+        'vendor/etc/seccomp_policy/c2audio.vendor.base-arm.policy',
+        'vendor/etc/seccomp_policy/c2audio.vendor.base-arm64.policy',
+        'vendor/etc/seccomp_policy/codec2.vendor.base-arm64.policy',
+    ): blob_fixup()
+        .call(allow_syscalls('uname', 'setsockopt', 'getppid'), need_tmp_dir=False),
+    (
+        'vendor/etc/seccomp_policy/gnss@2.0-base.policy',
+        'vendor/etc/seccomp_policy/gnss@2.0-edgnss-daemon.policy',
+        'vendor/etc/seccomp_policy/gnss@2.0-xtra-daemon.policy',
+        'vendor/etc/seccomp_policy/gnss@2.0-xtwifi-client.policy',
+        'vendor/etc/seccomp_policy/imsrtp.policy',
+        'vendor/etc/seccomp_policy/qcrilnr@2.0.policy',
+        'vendor/etc/seccomp_policy/qesdk.policy',
+        'vendor/etc/seccomp_policy/qms.policy',
+        'vendor/etc/seccomp_policy/qsap_dcfd.policy',
+        'vendor/etc/seccomp_policy/qsap_sensors.policy',
+        'vendor/etc/seccomp_policy/qsap_voiceui.policy',
+        'vendor/etc/seccomp_policy/qspm.policy',
+        'vendor/etc/seccomp_policy/qvr@2.0.policy',
+        'vendor/etc/seccomp_policy/qwesd@2.0.policy',
+        'vendor/etc/seccomp_policy/sxr@2.0.policy',
+        'vendor/etc/seccomp_policy/vendor.qti.hardware.dsp.policy',
+        'vendor/etc/seccomp_policy/wfdhdcphalservice.policy',
+        'vendor/etc/seccomp_policy/wfdvndservice.policy',
+        'vendor/etc/seccomp_policy/wifidisplayhalservice.policy',
+    ): blob_fixup()
+        .call(allow_syscalls('getppid'), need_tmp_dir=False),
 }  # fmt: skip
 
 module = ExtractUtilsModule(
