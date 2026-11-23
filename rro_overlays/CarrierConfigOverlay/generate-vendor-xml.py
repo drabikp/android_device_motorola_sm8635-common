@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
 #
+# SPDX-FileCopyrightText: 2026 The LineageOS Project
+# SPDX-License-Identifier: Apache-2.0
+#
+
+#
 # Generate res/xml/vendor.xml, the per-carrier IMS settings (VoLTE, Wi-Fi calling,
 # video calling, VoNR, RTT, supplementary services over UT) that Motorola ships
 # for this phone.

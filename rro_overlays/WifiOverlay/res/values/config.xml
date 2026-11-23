@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
+    SPDX-FileCopyrightText: 2026 The LineageOS Project
+    SPDX-License-Identifier: Apache-2.0
+-->
+<!--
     Wi-Fi capability resources for sm8635 (arcfox / razr 50 ultra).
 
     Every value below is set from something the radio or the driver said, not

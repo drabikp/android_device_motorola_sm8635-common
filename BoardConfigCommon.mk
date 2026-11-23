@@ -1,4 +1,9 @@
 #
+# SPDX-FileCopyrightText: 2026 The LineageOS Project
+# SPDX-License-Identifier: Apache-2.0
+#
+
+#
 # Common BoardConfig for Motorola SM8635 (Snapdragon 8s Gen 3, "pineapple").
 #
 # FIRST DRAFT, but not a guessed one. Every value below was measured on a real

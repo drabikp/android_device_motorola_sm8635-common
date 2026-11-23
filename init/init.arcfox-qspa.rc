@@ -1,3 +1,8 @@
+#
+# SPDX-FileCopyrightText: 2026 The LineageOS Project
+# SPDX-License-Identifier: Apache-2.0
+#
+
 # QSPA modem selector -- without this, four QTI telephony apks never install.
 #
 # org.codeaurora.ims, com.qti.phone, com.qualcomm.qcrilmsgtunnel and

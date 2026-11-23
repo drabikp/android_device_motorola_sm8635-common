@@ -1,3 +1,8 @@
+#
+# SPDX-FileCopyrightText: 2026 The LineageOS Project
+# SPDX-License-Identifier: Apache-2.0
+#
+
 # Start the ST NFC HAL.
 #
 # arcfox is an ST54L part: st21nfc.ko is in modules.load, vendor.prop carries

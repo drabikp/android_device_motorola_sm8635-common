@@ -1,3 +1,8 @@
+/*
+ * SPDX-FileCopyrightText: 2026 The LineageOS Project
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package org.lineageos.arcfox.api1test;
 
 import android.app.Activity;

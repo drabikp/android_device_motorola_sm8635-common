@@ -1,4 +1,9 @@
 //
+// SPDX-FileCopyrightText: 2026 The LineageOS Project
+// SPDX-License-Identifier: Apache-2.0
+//
+
+//
 // Runtime resource overlay for the Wi-Fi mainline module's resources.
 //
 // This is an RRO rather than a PRODUCT_PACKAGE_OVERLAYS entry in

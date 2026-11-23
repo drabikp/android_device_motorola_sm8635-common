@@ -1,3 +1,8 @@
+#
+# SPDX-FileCopyrightText: 2026 The LineageOS Project
+# SPDX-License-Identifier: Apache-2.0
+#
+
 # Swap (zram) -- reload the GKI zram module that Motorola's rc unloads.
 #
 # Found 2026-11-22: the phone ran with NO swap at all (SwapTotal 0, no

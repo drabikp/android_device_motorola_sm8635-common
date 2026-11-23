@@ -1,3 +1,8 @@
+#
+# SPDX-FileCopyrightText: 2026 The LineageOS Project
+# SPDX-License-Identifier: Apache-2.0
+#
+
 # Common makefile for Motorola SM8635 (pineapple).
 
 COMMON_PATH := device/motorola/sm8635-common

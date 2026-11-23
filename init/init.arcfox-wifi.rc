@@ -1,3 +1,8 @@
+#
+# SPDX-FileCopyrightText: 2026 The LineageOS Project
+# SPDX-License-Identifier: Apache-2.0
+#
+
 # Start the WiFi HAL. WiFi is completely absent without this: no
 # android.hardware.wifi.IWifi/* in `service list`, no wlan0, no wpa_supplicant,
 # and system_server logs

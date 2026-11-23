@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
+    SPDX-FileCopyrightText: 2026 The LineageOS Project
+    SPDX-License-Identifier: Apache-2.0
+-->
+<!--
     targetName MUST be WifiCustomization: that is the <overlayable> block name in
     packages/modules/Wifi/service/ServiceWifiResources/res/values/overlayable.xml,
     and every resource this overlay sets is declared inside it. An overlay that

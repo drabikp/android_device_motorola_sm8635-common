@@ -1,3 +1,8 @@
+//
+// SPDX-FileCopyrightText: 2026 The LineageOS Project
+// SPDX-License-Identifier: Apache-2.0
+//
+
 // Diagnostic ONLY. Deliberately NOT in PRODUCT_PACKAGES: this is built on demand
 // with `m Api1CameraTest` and installed with adb, never shipped.
 //
